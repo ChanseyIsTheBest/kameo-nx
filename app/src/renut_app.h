@@ -59,6 +59,8 @@ void RexSwitchApmApply(void);
 }
 #endif
 
+void KameoInstallFpGuard();  // src/kameo_fp_guard.cpp
+
 class RenutApp : public rex::ReXApp {
 public:
     RenutApp(rex::ui::WindowedAppContext& ctx, std::string_view name, rex::PPCImageInfo info)
@@ -135,6 +137,7 @@ public:
     // (src/me, from masseffect-nx) and the emulated Xenos GPU plugin is not loaded (ReXApp only loads it
     // when config.graphics is empty).
     void OnPreSetup(rex::RuntimeConfig& config) override {
+        KameoInstallFpGuard();
         banjo::ApplyMasterSwitches();
 #if REX_PLATFORM_SWITCH
         // Before the Vulkan device exists (the graphics system creates it after this). Mesa's own disk cache
