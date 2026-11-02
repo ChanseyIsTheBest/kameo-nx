@@ -25,7 +25,7 @@ CAPTURES = 'nfsmw_captura_cada_s = 15\nnfsmw_captura_max = 60\n'
 TESTS = {
     'emu_verify.toml': (os.path.join('configs', 'renut_verify.toml'), PAD + CAPTURES),
     'emu_attract.toml': (os.path.join('configs', 'renut_verify.toml'), NO_PAD + CAPTURES),
-    'emu_profile.toml': ('renut_play.toml', PAD + 'switch_profile_stacks = true\n'),
+    'emu_profile.toml': ('renut_play.toml', PAD + CAPTURES + 'switch_profile_stacks = true\n'),
     'emu_ab.toml': ('renut_ab.toml', PAD),
 }
 

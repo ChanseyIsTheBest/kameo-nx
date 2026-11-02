@@ -1,0 +1,43 @@
+kameo-nx: notes for this package
+=================================
+
+Nothing here has run on a real console. Ryujinx and the PC are proxies: every timing below is theirs, not the A57's.
+
+Setting up
+----------
+1. Copy COPY_TO_SD_switch_kameo-nx to sdmc:/switch/kameo-nx/ .
+2. game_root/: your extracted disc, with title update 2's default.xexp next to default.xex.
+3. update/: title update 2's language folders (English, French ...).
+4. dlc/ (optional): the four DLC packages as they came, one copy of the Add-On Pack. Installed at the first start.
+5. Start the NRO. renut.toml is read if it is there; kameo.toml holds the player's options and is written if missing.
+
+Which toml
+----------
+renut.toml        shipped settings, logs and diagnostics on: use this first.
+renut_play.toml   the same with the render-thread diagnostics off, for playing.
+renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. Stand still in one place for 10+ minutes
+                  and send logs/renut_001.log: the "[renut A/B]" lines give each target.
+configs/          renut_verify.toml (slow; every verify key), renut_profile.toml (sampling profile), renut_pgo.toml, and the
+                  options that change the picture, each one key away from renut.toml, for you to decide on.
+
+What to test, in order
+----------------------
+1. Boot to the title, menus and a new game. Does the Rare logo, the opening movie and Thorn's Castle appear?
+2. New Quest's keyboard is the Switch's own (not exercised in the emulator: the tests answer it with its default).
+3. Sound in the movie and in gameplay.
+4. Frame rate in Thorn's Castle, handheld (720 lines) and docked (1080 lines). Docked at 1080 has not been run at all.
+5. A DLC outfit, if the DLC is installed. Never selected in a test so far; Expert no longer refuses for the Power Pack.
+6. A 10-minute stay in one place with renut_ab.toml.
+
+Things most likely to go wrong
+------------------------------
+- banjo_renut_deferred_chain is ON here, against banjo-nx's default, because Kameo has one device. It hung banjo-nx's emulator
+  when there were two. If the game freezes after some minutes, set it to false in renut.toml and tell me whether that cured it.
+- GPU memory: the region peaked at 963 MB in the emulator at 720 lines. 1080 docked will use more; the log's "Memory:" lines
+  every 10 s say how much.
+
+Turning on a console profile
+----------------------------
+Copy configs/renut_profile.toml over renut.toml, play the slow scene for a few minutes, and send logs/rex/rex_profile.log, the
+log, and this package's name. kameo-nx.elf and source_<commit>.tgz here are what maps its samples to source lines: keep them
+with the NRO. Hand-written natives wait for this profile; none are in this build.
