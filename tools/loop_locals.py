@@ -155,6 +155,22 @@ def is_code(line):
     return not line.lstrip().startswith('//')
 
 
+def switch_end(body, k):
+    """From halo3-nx (2026-11-03, its commit b39c4a5e): the line closing the switch that line k is in, or k. A region whose
+    last jump back is a case of a switch must not end there: the later cases are reached from inside it, but as lines below
+    it they got no store of the locals, so the code after them read stale registers. Kameo's tree has the shape once
+    (sub_825917A8) with no such jump: tools/loop_switch_check.py-style check, 0 to repair on 2026-11-03."""
+    for j in range(k, -1, -1):
+        if body[j] == '\t}':
+            return k
+        if body[j].startswith('\tswitch ('):
+            for e in range(k, len(body)):
+                if body[e] == '\t}':
+                    return e
+            return k
+    return k
+
+
 class Counts:
     def __init__(self):
         self.done = self.already = self.with_call = self.unknown_name = self.no_regs = self.from_below = 0
@@ -185,6 +201,7 @@ def convert(body, c):
         first = label_at[header]
         if first + 1 >= len(body) or body[first + 1] != BARRIER:
             continue
+        end = switch_end(body, end)
         code = [l for l in body[first:end + 1] if is_code(l)]
         if any(DONE.search(l) for l in code):
             c.already += 1
