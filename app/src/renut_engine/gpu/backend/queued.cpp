@@ -193,7 +193,9 @@ private:
 };
 CapturePool g_capture_pool;
 
-// A Begin*Vertices draw waiting for its vertices, per device.
+// A Begin*Vertices draw waiting for its vertices, per device. kameo-nx: a device's entry stays, empty (no capture), when its
+// draw is queued: this game draws through here thousands of times a frame, and erasing the node each time cost a malloc and
+// a free, each with its lock (emu5prof, the drawing thread).
 struct DeferredDraw {
   DrawCapture *capture = nullptr;  // owned (g_capture_pool)
   const u8 *scratch = nullptr;
@@ -201,9 +203,9 @@ struct DeferredDraw {
 };
 std::mutex g_deferred_mutex;
 std::unordered_map<u32, DeferredDraw> g_deferred;
-// banjo-nx (2026-10-20, from sa2-nx, banjo_renut_callbacks_fast): g_deferred.size(), kept under g_deferred_mutex and read without it
-// (FlushDeferredVertices: every hook calls it first). A Begin*Vertices draw is flushed by the next hook of its device,
-// on the thread that made it, which sees the count in program order.
+// banjo-nx (2026-10-20, from sa2-nx, banjo_renut_callbacks_fast): the entries holding a capture, kept under g_deferred_mutex and read
+// without it (FlushDeferredVertices: every hook calls it first). A Begin*Vertices draw is flushed by the next hook of its
+// device, on the thread that made it, which sees the count in program order.
 std::atomic<size_t> g_deferred_count{0};
 
 // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_snapshot_deltas): the delta chain's layout. Of the device's first kDeviceSnapshotSize
@@ -660,12 +662,12 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
     {
       std::lock_guard lock(g_deferred_mutex);
       auto it = g_deferred.find(device_va);
-      if (it != g_deferred.end()) {
+      if (it != g_deferred.end() && it->second.capture) {
         // One not flushed (FlushDeferredVertices above queued it, so none is expected): dropped as the original
         // replaced it; its delta never reaches the render thread, so the chain rebases.
         g_capture_pool.Give(it->second.capture);
-        g_deferred.erase(it);
-        g_deferred_count.store(g_deferred.size(), std::memory_order_release);
+        it->second = {};
+        g_deferred_count.fetch_sub(1, std::memory_order_release);
         g_delta.device.store(nullptr, std::memory_order_relaxed);
       }
     }
@@ -673,8 +675,12 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
     if (!capture)
       return;
     std::lock_guard lock(g_deferred_mutex);
-    g_deferred[device_va] = {capture, scratch, bytes};
-    g_deferred_count.store(g_deferred.size(), std::memory_order_release);
+    DeferredDraw &slot = g_deferred[device_va];
+    if (slot.capture)
+      g_capture_pool.Give(slot.capture);
+    else
+      g_deferred_count.fetch_add(1, std::memory_order_release);
+    slot = {capture, scratch, bytes};
     return;
   }
   DrawCapture *capture = nullptr;
@@ -696,9 +702,11 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   }
   std::lock_guard lock(g_deferred_mutex);
   DeferredDraw &slot = g_deferred[device_va];
-  g_capture_pool.Give(slot.capture);  // one not flushed (the original replaced it the same way)
+  if (slot.capture)
+    g_capture_pool.Give(slot.capture);  // one not flushed (the original replaced it the same way)
+  else
+    g_deferred_count.fetch_add(1, std::memory_order_release);
   slot = {capture, scratch, bytes};
-  g_deferred_count.store(g_deferred.size(), std::memory_order_release);
 }
 
 void FlushDeferredVertices(u32 device_va) {
@@ -714,11 +722,11 @@ void FlushDeferredVertices(u32 device_va) {
   {
     std::lock_guard lock(g_deferred_mutex);
     auto it = g_deferred.find(device_va);
-    if (it == g_deferred.end())
+    if (it == g_deferred.end() || !it->second.capture)
       return;
-    deferred = std::move(it->second);
-    g_deferred.erase(it);
-    g_deferred_count.store(g_deferred.size(), std::memory_order_release);
+    deferred = it->second;
+    it->second = {};
+    g_deferred_count.fetch_sub(1, std::memory_order_release);
   }
   deferred.capture->vertices.assign(deferred.scratch, deferred.scratch + deferred.bytes);
   QueueCapture(deferred.capture);

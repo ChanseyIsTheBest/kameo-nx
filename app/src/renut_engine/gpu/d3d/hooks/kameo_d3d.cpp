@@ -72,12 +72,23 @@ std::mutex g_declaration_mutex;
 std::unordered_map<uint64_t, u32> g_declaration_ids;
 std::deque<VertexDeclarationRecord> g_declaration_records;
 std::atomic<VertexDeclarationRecord *> g_declaration_by_id[kMaxDeclarationIds];
-// This thread's last answer: a draw mostly keeps its declaration.
-thread_local u32 t_last_declaration_va = 0;
-thread_local uint64_t t_last_declaration_hash = 0;
-thread_local u32 t_last_declaration_id = 0;
 
-u32 DeclarationIdOf(u32 declaration_va) {
+// What a thread remembers from draw to draw, fetched once per Prepare: on the Switch a thread_local is a function call
+// each time (emu5prof: __aarch64_read_tp 4.6 % of the drawing thread).
+struct SeenSurface {
+  u32 va = 0, size = 0, info = 0;
+};
+struct DeclarationMemo {
+  u32 va = 0, id = 0;
+  uint64_t hash = 0;
+};
+struct PrepareMemo {
+  SeenSurface surfaces[5];
+  DeclarationMemo declarations[32];  // draws alternate between a few declarations: the mutex only for a new one
+};
+thread_local PrepareMemo t_prepare_memo;
+
+u32 DeclarationIdOf(u32 declaration_va, PrepareMemo &memo) {
   if (!declaration_va)
     return 0;
   const u32 count = Word(declaration_va + kDeclarationCount);
@@ -87,8 +98,9 @@ u32 DeclarationIdOf(u32 declaration_va) {
   if (!elements)
     return 0;
   const uint64_t hash = XXH3_64bits(elements, size_t(count) * 12);
-  if (declaration_va == t_last_declaration_va && hash == t_last_declaration_hash)
-    return t_last_declaration_id;
+  DeclarationMemo &seen = memo.declarations[(declaration_va * 0x9E3779B1u) >> 27];
+  if (declaration_va == seen.va && hash == seen.hash)
+    return seen.id;
   std::lock_guard lock(g_declaration_mutex);
   u32 &id = g_declaration_ids[hash];
   if (!id && g_declaration_records.size() + 1 < kMaxDeclarationIds) {
@@ -103,9 +115,7 @@ u32 DeclarationIdOf(u32 declaration_va) {
     id = u32(g_declaration_records.size());
     g_declaration_by_id[id].store(&record, std::memory_order_release);
   }
-  t_last_declaration_va = declaration_va;
-  t_last_declaration_hash = hash;
-  t_last_declaration_id = id;
+  seen = {declaration_va, id, hash};
   return id;
 }
 
@@ -157,14 +167,9 @@ BoundSurface &BoundSurfaceSlot(u32 va) {
   return g_bound_surfaces[(va * 0x9E3779B1u) >> 24];
 }
 
-struct SeenSurface {
-  u32 va = 0, size = 0, info = 0;
-};
-thread_local SeenSurface t_seen_surfaces[5];
-
 // Per draw: three words for each bound surface, and the rest only when they change. Four colour targets and the depth
 // target are five words in a row.
-void NoteBoundSurfaces(u32 device) {
+void NoteBoundSurfaces(u32 device, PrepareMemo &memo) {
   const auto *bound = GuestPtr<const be_u32>(device + native::off::RenderTargets);
   for (u32 i = 0; i < 5; ++i) {
     const u32 va = bound[i];
@@ -175,7 +180,7 @@ void NoteBoundSurfaces(u32 device) {
       continue;
     const u32 size = *reinterpret_cast<const be_u32 *>(header + 24);
     const u32 info = *reinterpret_cast<const be_u32 *>(header + 48);
-    SeenSurface &seen = t_seen_surfaces[i];
+    SeenSurface &seen = memo.surfaces[i];
     if (seen.va == va && seen.size == size && seen.info == info)
       continue;
     seen = {va, size, info};
@@ -214,9 +219,10 @@ void Prepare(u32 device) {
   NoteDevice(device);
   SetWord(device + d3d::kKameoVertexShaderMirror, Word(device + d3d::kGameDeviceVertexShader));
   const u32 declaration = Word(device + d3d::kGameDeviceVertexDeclaration);
-  SetWord(device + d3d::kKameoDeclarationId, DeclarationIdOf(declaration));
+  PrepareMemo &memo = t_prepare_memo;
+  SetWord(device + d3d::kKameoDeclarationId, DeclarationIdOf(declaration, memo));
   SyncStreams(device, declaration);
-  NoteBoundSurfaces(device);
+  NoteBoundSurfaces(device, memo);
 }
 
 bool ReadRect(u32 va, ClearRect &rect) {
