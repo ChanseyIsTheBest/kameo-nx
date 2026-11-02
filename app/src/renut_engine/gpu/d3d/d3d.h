@@ -353,8 +353,10 @@ constexpr u32 StreamFetchIndex(u32 stream) {
 
 // Common bits of an index buffer: bit 31 32-bit indices, 29-30 endian mode.
 constexpr u32 kIndexBufferCommon32Bit = 0x80000000u;
+// kameo-nx: XDK 2.0.2135 does not keep it in Common: DrawIndexedVertices sub_820D0E10 writes VGT_DMA_SIZE with 0x40000000
+// (8-in-16) for 16-bit indices and 0x80000000 (8-in-32) for 32-bit ones (`oris r28,r5,0x4000`, `oris r28,r10,0x8000`).
 constexpr u32 IndexBufferEndian(u32 common) {
-  return (common >> 29) & 3;
+  return (common & kIndexBufferCommon32Bit) ? 2 : 1;
 }
 
 // What Renut reads of a surface (N&B's D3DSURFACE after its Resource header).
