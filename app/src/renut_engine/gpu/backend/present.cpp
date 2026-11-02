@@ -48,9 +48,11 @@ REXCVAR_DEFINE_DOUBLE(banjo_renut_diag_show_gamma, 1.0, "Banjo/Renut",
                       "Diagnostic: banjo_renut_diag_show_texture's exponent (depth near 1 shows with 64 or so)");
 
 // banjo-nx (2026-10-20): see GameGamma below.
-REXCVAR_DEFINE_BOOL(banjo_renut_game_gamma, false, "Banjo/Renut",
-                    "Apply the gamma ramp the game loads to the output, as the Xbox 360's display and banjo-nx's own "
-                    "renderer do (N&B's darkens the midtones, about x^1.17). Off: Renut's output as before");
+// kameo-nx (2026-11-02): on by default: without it the picture is darker than the reference at every midtone (Kameo: RePowered
+// measured the same difference, its kameo_gfx_gamma: median 30 against the reference's 55).
+REXCVAR_DEFINE_BOOL(banjo_renut_game_gamma, true, "Banjo/Renut",
+                    "Apply the gamma ramp the game loads to the output, as the Xbox 360's display does. Off: Renut's "
+                    "output without it, darker than the reference");
 
 REXCVAR_DEFINE_BOOL(renut_vsync, true, "Nuts&Bolts/Graphics",
                     "Show each frame at the display's refresh: no tearing, and the game runs at "

@@ -1,1 +1,10 @@
-# kameo-nx: mid-asm hooks (none yet).
+# kameo-nx: mid-asm hooks.
+
+# From Kameo: RePowered's config/tu/hooks/render_guards.toml (MaxDeadBear, BiRabittoh; MIT), checked against the patched image:
+# at 0x8228AF0C, `lwzx r8,r9,r26; mtctr r8; bctrl`, the effects table's dispatch in _depthEffects_render. After a change of
+# viewport count the index can read past the table.
+[[midasm_hook]]
+address = 0x8228AF0C
+name = "KameoGuardEffectsDispatch"
+registers = ["r8"]
+after_instruction = true

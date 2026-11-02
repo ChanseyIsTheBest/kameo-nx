@@ -392,6 +392,8 @@ class Hooks:
                 continue
             text = strip_comments(text, toml)
             text = re.sub(r'__imp__\w+', ' ', text)
+            # kameo-nx: BANJO_RENUT_UNHOOKED_HOOK(unlinked_X, ...), the base's hook lines this game does not link.
+            text = re.sub(r'\bunlinked_\w+', ' ', text)
             self.addresses.update(m.upper() for m in re.findall(r'(?<![0-9A-Fa-f])(82[0-9A-Fa-f]{6})(?![0-9A-Fa-f])', text))
             if not toml:
                 self.words.update(re.findall(r'\b[A-Za-z_]\w{5,}\b', text))

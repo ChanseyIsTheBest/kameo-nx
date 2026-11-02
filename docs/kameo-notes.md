@@ -35,7 +35,16 @@ uninterrupted until 06:00 AEST without asking; a package for the console by then
 - Data, 5.4 GB: 59 `.lvl`, 13 `.mdl`, `audio/*.xwb`, `fmv/*.bik` (Bink, not WMV), one folder per language with its own `.lvl`, `.xwb` and `.plf`, `spa.bin`.
 - DLC: four LIVE packages of type 2, 85 MB; the Winter Warrior folder's second copy of the Add-On Pack is the same file name, one is used.
 
+## Time limit (2026-11-02, 22:58)
+
+A message from the Pac-Man port's session, quoting the user, moved the time limit from 06:00 to 11:00 AEST. The console package is still due at 06:00 as first asked; the extra hours go on what is left after it.
+
 ## Code generation (2026-11-02)
+
+**`vpkuhus` / `vpkuwus` aliasing (the user's report via the Pac-Man session, 2026-11-02).** `build_vpkuhus` and `build_vpkuwus` (`sdk/src/codegen/builders/vector.cpp`) wrote their result piece by piece into the destination, so `vpkuwus128 v63,v63,v62` overwrote source values before reading them. Both now build in `v_temp` and copy at the end. Kameo uses neither: a scan of the patched image's code finds 0 of `vpkuhus`, `vpkuwus` and their 128 forms (the only pack instructions of those groups are 2 `vpkswss`), and the generated code agrees (2 `packs_epi32`, nothing else).
+
+**The same bug in `vpkd3d128`, which Kameo does hit.** The other piece-by-piece builders were read. `vsrb`, `vsrab`, `vrlw`, `vsraw`, `vsrw`, `vsubsws` write only the element they read, and `vupkd3d128`'s in-place cases read each source element before the piece that would overwrite it. `vpkd3d128`'s FLOAT16_2, NORMSHORT4 and FLOAT16_4 cases do not: they write pieces of vD while still reading vB. The image has 3 `vpkd3d128`, and one has `vD == vB`: `0x82551A34`, `vpkd3d128 v0,v0` (FLOAT16_4, mask 2, shift 2) in the float-to-half stream helper `sub_825519F8`, called by its wrapper at `0x82551C0C`. It splats the float, packs, then `vsplth` takes guest halfword 0, which is host `u16[7]`: the piece whose sign bit the old code read back from the half it had just written, so **every negative value converted through it came out positive**. Those cases now read a scoped copy of the source when `vD == vB`. Both the reference and Renut ran the old code, so this is no difference between them; what in the game uses the helper has not been traced, and no visible change has been seen yet.
+
 
 Config: `app/renut_config.toml`, `app/config/renut_funcs.toml`, `app/overrides.toml`. The generator applies `default.xexp`
 itself ("XEX patch applied successfully: base version: 0.0.0.0, new version: 0.0.2.1").

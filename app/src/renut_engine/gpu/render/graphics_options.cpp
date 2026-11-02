@@ -79,7 +79,8 @@ REXCVAR_DEFINE_STRING(renut_anisotropic_filtering, "Game", "Nuts&Bolts/Graphics"
                       "16x.")
     .allowed({"Game", "2x", "4x", "8x", "16x"});
 
-REXCVAR_DEFINE_STRING(renut_post_process_precision, "High", "Nuts&Bolts/Graphics",
+// kameo-nx (2026-11-02): "Game" by default on the PC too: pixel-identical is the rule, and the Switch ships it.
+REXCVAR_DEFINE_STRING(renut_post_process_precision, "Game", "Nuts&Bolts/Graphics",
                       "Precision of the bloom, depth of field and SSAO buffers: Game keeps the "
                       "console's 8 bits (faint glow shows as blobs sliding over dark areas), High "
                       "uses 16 bits.")

@@ -12,10 +12,11 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, 'dist', 'switch', 'kameo-nx')
 OUT = os.path.join(ROOT, 'out', 'emu')
-# kameo-nx: START at the title; Normal; "Start without saving" (DOWN, A) and its caution (A); then Play and through the
-# opening scene. Held 1.5 s: at the emulator's frame rate a poll can miss a shorter press.
-PAD = ('input_script = "60:START@1.5,80:A@1.5,95:A@1.5,110:DOWN@1.5,120:A@1.5,135:A@1.5,150:A@1.5,165:A@1.5,180:A@1.5,'
-       '195:A@1.5,210:A@1.5,225:A@1.5,240:A@1.5,255:A@1.5,270:A@1.5,285:A@1.5"\ninput_script_sticks = 400\n')
+# kameo-nx: the title shows at about 80 s in the emulator (emu1): START; Play; Normal; "Start without saving" (DOWN, A) and
+# its caution (A); then through the opening scene. Held 1.5 s: at the emulator's frame rate a poll can miss a shorter press.
+# Without the Power Pack, Expert stops at a message, so one press too few or too many shows there.
+PAD = ('input_script = "85:START@1.5,100:A@1.5,115:A@1.5,130:DOWN@1.5,140:A@1.5,155:A@1.5,170:A@1.5,185:A@1.5,200:A@1.5,'
+       '215:A@1.5,230:A@1.5,245:A@1.5,260:A@1.5,275:A@1.5,290:A@1.5,305:A@1.5"\ninput_script_sticks = 420\n')
 NO_PAD = 'input_script = ""\ninput_script_sticks = 0\n'
 CAPTURES = 'nfsmw_captura_cada_s = 15\nnfsmw_captura_max = 60\n'
 TESTS = {

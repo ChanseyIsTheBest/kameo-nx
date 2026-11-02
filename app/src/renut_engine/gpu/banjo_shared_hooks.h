@@ -29,7 +29,6 @@ extern "C" void renut_native_sub_82634740(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_82634B90(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_826352B8(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_8263D060(PPCContext& ctx, uint8_t* base);
-extern "C" void renut_native_sub_8263D5E8(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_8263D6F8(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_8263F358(PPCContext& ctx, uint8_t* base);
 extern "C" void renut_native_sub_82640010(PPCContext& ctx, uint8_t* base);

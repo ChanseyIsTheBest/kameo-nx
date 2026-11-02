@@ -194,6 +194,18 @@ VertexDeclarationRecord *KameoDeclarationById(u32 id) {
 }
 }  // namespace renut::gpu
 
+// From Kameo: RePowered's src/engine/render_guards.cpp (MaxDeadBear, BiRabittoh; MIT): depthEffects_render's `lwzx r8, table[idx];
+// mtctr r8; bctrl` (app/config/renut_hooks.toml): after a change of viewport count the index can read flag words past the
+// table, so a target outside the code becomes a bare `blr`. The code range and 0x82323FB0 (a lone blr between padding) are
+// the patched image's, checked with tools/ppc_dis.py.
+void KameoGuardEffectsDispatch(PPCRegister &r8) {
+  constexpr u32 kCodeBegin = 0x820B0000u;
+  constexpr u32 kCodeEnd = 0x82720000u;
+  constexpr u32 kBareReturn = 0x82323FB0u;
+  if (r8.u32 < kCodeBegin || r8.u32 >= kCodeEnd)
+    r8.u64 = kBareReturn;
+}
+
 // void D3DDevice_DrawVertices(D3DDevice*, D3DPRIMITIVETYPE, UINT StartVertex, UINT VertexCount)
 BANJO_RENUT_HOOK_RAW(sub_820D0BD0) {
   const u32 device = ctx.r3.u32;

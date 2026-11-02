@@ -917,8 +917,9 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
     // buffer for the next frame first, and the frame's last draws (the composite, the HUD) took the new bytes.
     banjo::renut_gpu::checks::QueueKickFlush();
     KickFence(device);
-    // banjo-nx (2026-10-20, banjo_renut_game_gamma): the device's gamma ramp (StoreGamma's +0x3A9C) for the present.
-    Video::NoteGameGamma(device + 0x3A84);  // katamari-nx: 0x3A9C->0x3A84
+    // banjo-nx (2026-10-20, banjo_renut_game_gamma): the device's gamma ramp for the present. kameo-nx: at +0x36EC, where
+    // D3DDevice_SetGammaRamp (sub_820C48B8) keeps the converted ramp (1536 bytes) it hands to sub_820D5940.
+    Video::NoteGameGamma(device + 0x36EC);
   }
 
   render_thread::QueueFrame([front_buffer, swap_ordinal] {
