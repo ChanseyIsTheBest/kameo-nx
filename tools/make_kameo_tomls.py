@@ -59,10 +59,11 @@ PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders
         'banjo_renut_diag_terrain': 'false'}
 # The targets that act on Kameo's draws (all immediate, no command-buffer recordings: docs/kameo-notes.md's census): the
 # fast draw (25), pipelines by content (28), whole-buffer copies (22), merged draws (33), mesh objects (42), the localized
-# copies of the hot functions (70), Begin*Vertices draws in the delta chain (71: on here, off in banjo-nx); 1 (a Vulkan-only
-# key) is the do-nothing control on the Switch. The record-time items (45-50) have nothing to act on here, and target 26 (the
-# setters' touch compare) neither: the game's own setters stay.
-# 8 targets x 60 s = 8 minutes a round: 24+ minutes.
+# copies of the hot functions (70), Begin*Vertices draws in the delta chain (71: on here, off in banjo-nx), 2D textures read
+# through tfetch3D (72; its off half changes the picture); 1 (a Vulkan-only key) is the do-nothing control on the Switch. The
+# record-time items (45-50) have nothing to act on here, and target 26 (the setters' touch compare) neither: the game's own
+# setters stay.
+# 9 targets x 60 s = 9 minutes a round: 27+ minutes.
 AB = {'banjo_renut_ab_targets': '"72,71,25,28,22,33,42,70,1"', 'banjo_renut_ab_s': '30',
       'banjo_renut_dynamic_resolution': 'false'}
 VERIFY = {k: 'true' for k in (

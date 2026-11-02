@@ -3,13 +3,23 @@ kameo-nx: notes for this package
 
 Nothing here has run on a real console. Ryujinx and the PC are proxies: every timing below is theirs, not the A57's.
 
-What this exact NRO has done in Ryujinx (emu14): Rare logo, title, menus, the opening movie and Thorn's Castle, with the four DLC packs
-installed; every verify key on: 0 differences. Handheld. The build before it did the same docked at 1080 lines (emu13docked).
+What this exact NRO has done in Ryujinx (emu15, emu24fix): Rare logo, title, menus, the opening movie and Thorn's Castle, with the four
+DLC packs installed; every verify key on: 0 differences. Handheld. An earlier build did the same docked at 1080 lines (emu13docked).
 Frame rate there is 10-19 fps on a shared PC, which says little about the console. What has not been run anywhere: past the opening of
 the first level, a DLC outfit on screen, the water cannon, co-op.
 
-Known differences from the reference (docs/kameo-notes.md has the captures): the sky through the castle window is greyer than the
-reference's orange (cause not established), and the chains above the player look more solid.
+New in this package: a shader's tfetch3D on a 2D texture now samples it (banjo_renut_fetch3d_on_2d, A/B target 72). That brings back the
+sun's orange glow on the clouds through the castle window.
+
+Known differences from the reference (docs/kameo-notes.md has the captures): none open in the idle view of Thorn's Castle. The rings
+above the player are denser than in the reference: the game places them by frame rate, so your console's spacing will follow its own.
+
+Ryujinx had a bug that made metal in the hole in the wall look mottled lilac. It was in Ryujinx's shader translator, not this build, and
+is fixed in the Ryujinx on this PC. A console should not show it: if that metal looks mottled on your console, tell me, because then
+this reading is wrong (banjo_gpu_output_trim = false in renut.toml would be the first test).
+
+No model or level in the game or its DLC uses the tessellated draw command, so banjo-nx's tessellation work is not in this port. If a
+later level is missing geometry, tell me where: that scan does not cover draws built directly in code.
 
 Setting up
 ----------
@@ -23,7 +33,7 @@ Which toml
 ----------
 renut.toml        shipped settings, logs and diagnostics on: use this first.
 renut_play.toml   the same with the render-thread diagnostics off, for playing.
-renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. A round is 8 minutes and the list starts
+renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. A round is 9 minutes and the list starts
                   at boot, so the first round lands partly on menus and loading: get into gameplay, stand still in one place
                   for 25 minutes or more, and send logs/renut_001.log. The "[renut A/B]" lines give each target; read them
                   against target 1's spread. In the emulator that spread was 3 ms, and no target could be judged.
@@ -39,7 +49,9 @@ What to test, in order
 5. A DLC outfit, if the DLC is installed. Never selected in a test so far; Expert no longer refuses for the Power Pack.
 6. A 25-minute stay in one place with renut_ab.toml. Target 71 is the question for you: Begin*Vertices draws in the delta chain,
    on here and off in banjo-nx. It removes about 12 MB/s of memcpy from the drawing thread on the PC, and could not be measured
-   in the emulator.
+   in the emulator. Target 72 is new: its off half loses the glow on the clouds and should cost almost nothing to keep on.
+7. The sky through the window in Thorn's Castle, the first thing to compare against a real 360 or the reference: orange bands on the
+   clouds near the sun, cream where the sun itself shows. The colour moves as the clouds do, so look for a few seconds.
 
 Things most likely to go wrong
 ------------------------------
