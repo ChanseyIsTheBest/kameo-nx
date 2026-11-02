@@ -21,7 +21,8 @@ import sys
 
 import xxhash
 
-SHADER_MAGIC = re.compile(rb"\x10\x2a\x11", re.S)
+# kameo-nx: version 0x0E too (XDK 2135's compiler; zuma-nx, RePowered).
+SHADER_MAGIC = re.compile(rb"\x10\x2a[\x11\x0e]", re.S)
 
 
 def find_shader_headers(data, aligned=True):

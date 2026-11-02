@@ -614,7 +614,7 @@ void Report() {
       if (calls)
         REXLOG_INFO("[hot] hand-written native of the {}: {} calls so far, by size ({}):{}", ::banjo::hand::kNames[k],
                     calls,
-                    k == ::banjo::hand::kConstants ? "vectors" : k == ::banjo::hand::kFlush ? "words written" : "bytes",
+                    "bytes",
                     sizes);
     }
     return;

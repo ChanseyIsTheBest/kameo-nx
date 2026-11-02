@@ -363,7 +363,9 @@ inline void CountReuse(int what, bool reused) {
   }
 }
 // banjo-nx (2026-10-26, Unleashed-style step 1): the fields the reuse tests stand for are the byte ranges they tested.
-static_assert(FieldsOfRange(10112, 10600 - 10112) == (kFieldBools | kFieldDest | kFieldViewPackets));
+// kameo-nx: the bools, then the private words (read by no draw), then the destination, window, values and control packets.
+static_assert(FieldsOfRange(0x2780, 0x2880 - 0x2780) == kFieldBools &&
+              FieldsOfRange(0x2CC0, 0x2DA8 - 0x2CC0) == (kFieldDest | kFieldViewPackets));
 static_assert(FieldsOfRange(0x2D00, 0x2DA8 - 0x2D00) == kFieldViewPackets && FieldOfOffset(0x2E00) == kField29C0 &&  // kameo-nx
               FieldOfOffset(d3d::kDeviceOffsetPredication) == kFieldPredication);
 static_assert(FieldsOfRange(d3d::kDeviceOffsetRenderTargets, 20) == kFieldTargets &&
@@ -7662,7 +7664,7 @@ void CensusDraw(const u8 *device_state, const DrawCall &call, const Targets &tar
   CensusFrame &cur = g_census[0];
   // The state key.
   uint64_t state = XXH3_64bits(device_state + kCensusFetchBegin, kCensusFloatBegin - kCensusFetchBegin);
-  state = XXH3_64bits_withSeed(device_state + kCensusTailBegin, 10880 - kCensusTailBegin, state);
+  state = XXH3_64bits_withSeed(device_state + kCensusTailBegin, 0x2880 - kCensusTailBegin, state);  // kameo-nx
   state = XXH3_64bits_withSeed(device_state + 0x2CC0, d3d::kDeviceSnapshotSize - 0x2CC0, state);  // kameo-nx  // katamari-nx: a chunk boundary (backend/queued.cpp)
   const u32 call_words[6] = {call.primitive, call.start_index, call.start_vertex, call.count, u32(call.base_vertex),
                              u32(call.indexed) | u32(call.tessellation) << 1 | u32(call.up_vertices != nullptr) << 2 |
