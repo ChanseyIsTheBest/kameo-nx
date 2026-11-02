@@ -9659,13 +9659,10 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   const u32 *shader_strides = nullptr;  // see GetStreamSource
   if (declaration_va) {
     if (declaration_va != g_last_declaration_va) {
-      g_last_declaration =
-          FindRecord<VertexDeclarationRecord>(declaration_va, RecordKind::VertexDeclaration);
+      g_last_declaration = KameoDeclarationById(declaration_va);  // kameo-nx: the id the draw hook left
       g_last_declaration_va = g_last_declaration ? declaration_va : 0;
     }
     declaration = g_last_declaration_va == declaration_va ? g_last_declaration : nullptr;
-    if (!declaration && declaration_va == Video::GuestDevice() + kDeviceDeclarationOffset)
-      declaration = DeviceDeclarationLocked(device);  // katamari-nx
   } else if (vs && vs->bound_declaration) {
     declaration = vs->bound_declaration.get();
     shader_strides = vs->bound_strides;
