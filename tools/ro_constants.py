@@ -108,13 +108,15 @@ MACROS_V = MARKER_V + '''
 '''
 
 
-def read_only_ranges(image):
+def read_only_ranges(image, load_base=None):
     """[(start, end)] of the image's read-only data sections, as guest addresses, and the image base."""
     pe = struct.unpack_from('<I', image, 0x3C)[0]
     if image[:2] != b'MZ' or image[pe:pe + 4] != b'PE\0\0':
         sys.exit('ERROR (post-codegen patch): ro_constants: the image dump is not a PE image')
     sections, opt_size = struct.unpack_from('<H', image, pe + 6)[0], struct.unpack_from('<H', image, pe + 20)[0]
-    base = struct.unpack_from('<I', image, pe + 24 + 28)[0]
+    base = load_base if load_base is not None else struct.unpack_from('<I', image, pe + 24 + 28)[0]
+    if base < 0x80000000:  # kameo-nx: Kameo's PE header says 0x400000; its XEX loads at 0x82000000
+        base = 0x82000000
     table = pe + 24 + opt_size
     ranges = []
     for i in range(sections):
@@ -177,9 +179,11 @@ def main():
     image = open(a.image, 'rb').read()
     pch_path = os.path.join(a.gen, pchs[0])
     pch = open(pch_path, encoding='utf-8').read()
-    ranges, base = read_only_ranges(image)
     m = re.search(r'#define REX_IMAGE_BASE (0x[0-9A-Fa-f]+)', pch)
     s = re.search(r'#define REX_IMAGE_SIZE (0x[0-9A-Fa-f]+)', pch)
+    # kameo-nx: the PE header's ImageBase is not always the load address (Kameo's says 0x400000; the XEX loads it at
+    # 0x82000000), so the sections' addresses come from the generated REX_IMAGE_BASE.
+    ranges, base = read_only_ranges(image, int(m.group(1), 16) if m else None)
     if not m or not s or int(m.group(1), 16) != base or int(s.group(1), 16) != len(image) or not ranges:
         sys.exit('ERROR (post-codegen patch): ro_constants: %s is not the image this code was generated from' % a.image)
 

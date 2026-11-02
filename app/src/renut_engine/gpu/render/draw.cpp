@@ -364,7 +364,7 @@ inline void CountReuse(int what, bool reused) {
 }
 // banjo-nx (2026-10-26, Unleashed-style step 1): the fields the reuse tests stand for are the byte ranges they tested.
 static_assert(FieldsOfRange(10112, 10600 - 10112) == (kFieldBools | kFieldDest | kFieldViewPackets));
-static_assert(FieldsOfRange(10432, 10600 - 10432) == kFieldViewPackets && FieldOfOffset(0x29C0) == kField29C0 &&
+static_assert(FieldsOfRange(0x2D00, 0x2DA8 - 0x2D00) == kFieldViewPackets && FieldOfOffset(0x2E00) == kField29C0 &&  // kameo-nx
               FieldOfOffset(d3d::kDeviceOffsetPredication) == kFieldPredication);
 static_assert(FieldsOfRange(d3d::kDeviceOffsetRenderTargets, 20) == kFieldTargets &&
               FieldsOfRange(1152, 1776 - 1152) == kFieldFetch &&
@@ -1895,7 +1895,7 @@ ViewportState ComputeViewport(const GuestDevice &device, const Targets &t) {
   key[8] = dev.m_WindowPacket.WindowOffset;
   key[9] = dev.m_WindowPacket.WindowScissorTL;
   key[10] = dev.m_WindowPacket.WindowScissorBR;
-  key[11] = device.U32(0x29C0);
+  key[11] = device.U32(0x2E00);  // kameo-nx: N&B's 0x29C0
   key[12] = u32(one_tile) | (banjo::renut_gpu::HalfPixelOffsetOn() ? 2u : 0u);
   key[13] = one_tile ? u32(tile.x1) : 0;
   key[14] = one_tile ? u32(tile.y1) : 0;
@@ -1975,7 +1975,7 @@ ViewportState ComputeViewportSlow(const GuestDevice &device, const Targets &t) {
   // above 1x put the game's full-screen quads (edges on the guest's pixel centres) past the centres of the host's top
   // row and left column, which were never drawn (the docked white line at 1.25x and 1.5x); at 1x the same as before.
   const float pixel_center =
-      (banjo::renut_gpu::HalfPixelOffsetOn() && !(device.U32(0x29C0) & 1)) ? 0.5f / t.scale.Factor() : 0.0f;
+      (banjo::renut_gpu::HalfPixelOffsetOn() && !(device.U32(0x2E00) & 1)) ? 0.5f / t.scale.Factor() : 0.0f;
   // SetViewport's rectangle back from its scale and offset: x = offset - scale
   // and width = 2 * scale; y = offset + scale and height = -2 * scale (the
   // scale is negative: y goes down).
@@ -4190,12 +4190,12 @@ StreamSource GetStreamSource(const GuestDevice &device, const DrawCall &call,
     have_vb = true;
     static const bool vb_verify = REXCVAR_GET(banjo_renut_resource_objects_verify);
     if (vb_verify) [[unlikely]] {
-      const auto *g = GuestPtr<const d3d::VertexBuffer>(device.U32(d3d::kDeviceOffsetStreamSources + stream * 4));
+      const auto *g = GuestPtr<const d3d::VertexBuffer>(device.U32(d3d::StreamSourceOffset(stream)));
       if (!g || u32(g->Format.dword[0]) != vb_words[0] || u32(g->Format.dword[1]) != vb_words[1])
         ++g_ib_verify_differ;  // (the index and vertex buffer headers' count)
     }
   } else if (const auto *vb = GuestPtr<const d3d::VertexBuffer>(
-                 device.U32(d3d::kDeviceOffsetStreamSources + stream * 4))) {
+                 device.U32(d3d::StreamSourceOffset(stream)))) {
     vb_words[0] = u32(vb->Format.dword[0]);
     vb_words[1] = u32(vb->Format.dword[1]);
     have_vb = true;
@@ -4775,7 +4775,7 @@ bool MeshProbeMake(const GuestDevice &device, const DrawCall &call, const Shader
     u32 *w = p.words[p.count];
     w[0] = device.VertexFetchWord(fetch_index, 0);
     w[1] = device.VertexFetchWord(fetch_index, 1);
-    w[2] = device.U32(d3d::kDeviceOffsetStreamSources + stream * 4);
+    w[2] = device.U32(d3d::StreamSourceOffset(stream));
     w[3] = u32(device.U8(d3d::kDeviceOffsetStreamStrides + stream)) | stream << 8;
     h = MeshMix(h, uint64_t(w[0]) << 32 | w[1]);
     h = MeshMix(h, uint64_t(w[2]) << 32 | w[3]);
@@ -5102,7 +5102,7 @@ bool WholeGeometryTry(const GuestDevice &device, const DrawCall &call, const Sha
     {
       const u32 fetch_index = d3d::kFirstVertexFetchIndex + d3d::StreamFetchIndex(stream);
       const u32 w0 = device.VertexFetchWord(fetch_index, 0), w1 = device.VertexFetchWord(fetch_index, 1);
-      const u32 sva = device.U32(d3d::kDeviceOffsetStreamSources + stream * 4);
+      const u32 sva = device.U32(d3d::StreamSourceOffset(stream));
       const u32 sbyte = device.U8(d3d::kDeviceOffsetStreamStrides + stream);
       LastStreamSource &ls = g_last_stream_sources[stream % kMaxVertexStreams];
       if (ls.valid && ls.w0 == w0 && ls.w1 == w1 && ls.sva == sva && ls.sbyte == sbyte && ls.vs == &vs &&
@@ -7562,7 +7562,9 @@ void SurfaceDescWords(u32 va, u32 out[3]) {
   out[0] = out[1] = out[2] = 0;
   if (!va)
     return;
-  if (const auto *desc = GuestPtr<const d3d::SurfaceDesc>(va + sizeof(d3d::Resource))) {
+  d3d::SurfaceDesc desc_value;  // kameo-nx
+  if (d3d::ReadSurfaceDesc(GuestPtr<const u8>(va), desc_value)) {
+    const d3d::SurfaceDesc *const desc = &desc_value;
     out[0] = desc->Size;
     out[1] = desc->SurfaceInfo;
     out[2] = desc->Format;
@@ -7606,7 +7608,7 @@ std::unordered_map<const void *, std::unordered_map<uint64_t, u32>> g_census_lef
 constexpr u32 kCensusFetchBegin = u32(offsetof(d3d::Device, m_Constants));
 constexpr u32 kCensusFloatBegin = kCensusFetchBegin + u32(offsetof(d3d::Constants, VertexShaderF));
 constexpr u32 kCensusTailBegin = kCensusFetchBegin + u32(offsetof(d3d::Constants, VertexShaderB));
-static_assert(kCensusTailBegin < 10880 && 11776 < d3d::kDeviceSnapshotSize);  // katamari-nx: a chunk boundary (backend/queued.cpp)
+static_assert(kCensusTailBegin < 0x2880 && 0x2CC0 < d3d::kDeviceSnapshotSize);  // kameo-nx  // katamari-nx: a chunk boundary (backend/queued.cpp)
 
 bool CensusCompared(u32 k) {  // g_census[k + 1] is frame N-(k+1)
   return g_census[0].frame != UINT64_MAX && g_census[k + 1].frame != UINT64_MAX &&
@@ -7661,7 +7663,7 @@ void CensusDraw(const u8 *device_state, const DrawCall &call, const Targets &tar
   // The state key.
   uint64_t state = XXH3_64bits(device_state + kCensusFetchBegin, kCensusFloatBegin - kCensusFetchBegin);
   state = XXH3_64bits_withSeed(device_state + kCensusTailBegin, 10880 - kCensusTailBegin, state);
-  state = XXH3_64bits_withSeed(device_state + 11776, d3d::kDeviceSnapshotSize - 11776, state);  // katamari-nx: a chunk boundary (backend/queued.cpp)
+  state = XXH3_64bits_withSeed(device_state + 0x2CC0, d3d::kDeviceSnapshotSize - 0x2CC0, state);  // kameo-nx  // katamari-nx: a chunk boundary (backend/queued.cpp)
   const u32 call_words[6] = {call.primitive, call.start_index, call.start_vertex, call.count, u32(call.base_vertex),
                              u32(call.indexed) | u32(call.tessellation) << 1 | u32(call.up_vertices != nullptr) << 2 |
                                  u32(call.up_indices != nullptr) << 3};
@@ -8344,7 +8346,7 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
     declaration_from_va = declaration_va != 0;
     if (declaration_va) {
       if (declaration_va != g_last_declaration_va) {
-        g_last_declaration = FindRecord<VertexDeclarationRecord>(declaration_va, RecordKind::VertexDeclaration);
+        g_last_declaration = KameoDeclarationById(declaration_va);  // kameo-nx: the id the draw hook left
         g_last_declaration_va = g_last_declaration ? declaration_va : 0;
       }
       declaration = g_last_declaration_va == declaration_va ? g_last_declaration : nullptr;
@@ -9764,7 +9766,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
       }
     }
     for (u32 left = declaration->layout.used_mask; left; left &= left - 1) {
-      const u32 vb = device.U32(d3d::kDeviceOffsetStreamSources + u32(std::countr_zero(left)) * 4);
+      const u32 vb = device.U32(d3d::StreamSourceOffset(u32(std::countr_zero(left))));
       if (const auto *p = vb ? GuestPtr<const u8>(vb) : nullptr) {
         __builtin_prefetch(p);
         __builtin_prefetch(p + sizeof(d3d::VertexBuffer) - 1);
@@ -10945,7 +10947,7 @@ void UnleashedCensusDraw(const GuestDevice &device, const DrawCall &call, u32 te
   // Streams: each used stream's vertex buffer header, and the range the draw reads.
   for (u32 left = stream_mask; left; left &= left - 1) {
     const u32 stream = u32(std::countr_zero(left));
-    const u32 header = device.U32(d3d::kDeviceOffsetStreamSources + stream * 4);
+    const u32 header = device.U32(d3d::StreamSourceOffset(stream));
     if (!header)
       continue;
     const StreamKey *key = nullptr;
@@ -11830,8 +11832,9 @@ void ClearStateLocked(const u8 *device_state, u32 flags, const ClearRect *rect,
 
   // D3D clamps clears to the viewport (CDevice viewport floats at 0x3170).
   ClearRect r = rect ? *rect : ClearRect{0, 0, int32_t(targets.width), int32_t(targets.height)};
-  const float vx = device.F32(0x3160), vy = device.F32(0x3164);  // katamari-nx: 0x3170->0x3160, 0x3174->0x3164
-  const float vw = device.F32(0x3168), vh = device.F32(0x316C);  // katamari-nx: 0x3178->0x3168, 0x317C->0x316C
+  // kameo-nx: D3DVIEWPORT9 is four words then two floats in this device.
+  const float vx = float(device.U32(d3d::kDeviceOffsetViewport)), vy = float(device.U32(d3d::kDeviceOffsetViewport + 4));
+  const float vw = float(device.U32(d3d::kDeviceOffsetViewport + 8)), vh = float(device.U32(d3d::kDeviceOffsetViewport + 12));
   if (vw > 0.0f && vh > 0.0f) {
     int32_t vx2 = int32_t(vx + vw), vy2 = int32_t(vy + vh);
     // A target grown for tiling: D3D bounds the viewport by the tile-sized

@@ -60,6 +60,8 @@
 // banjo-nx (2026-10-20, from sa2-nx): the SDK's Switch core layout (sdk/src/system/xthread.cpp).
 extern "C" uint32_t RexSetGuestThreadCoreLayout(int main_core, uint32_t others_mask, int others_preferred);
 void renutFrameLimit();  // kameo_keys.cpp: the player's frame_cap
+#include "profiler/profiler.h"  // kameo-nx: the frame boundary at Swap
+extern std::atomic<uint64_t> g_banjo_game_frames;  // kameo_keys.cpp: frames presented
 
 // banjo-nx (2026-10-20, from sa2-nx's sa2_renut_core_layout): see D3DDevice_Swap_hook.
 REXCVAR_DEFINE_BOOL(banjo_renut_core_layout, false, "Banjo/Enhancements",
@@ -77,7 +79,8 @@ using namespace renut::gpu;
 // Kernel exports the device code uses.
 // katamari-nx: Beautiful Katamari's GetCurrentThreadId is sub_824C1C10 (`lwz r11,256(r13); lwz r3,332(r11); blr`,
 // N&B's rex_GetCurrentThreadId 0x8220F1E0 byte for byte).
-REX_IMPORT(__imp__sub_824C1C10, GuestGetCurrentThreadId, u32());
+// kameo-nx: sub_82554D58 (`lwz r11,256(r13); lwz r3,332(r11); blr`, the calls in D3DDevice_ResourceDestroy and KickOff).
+REX_IMPORT(__imp__sub_82554D58, GuestGetCurrentThreadId, u32());
 REX_IMPORT(__imp__RtlInitializeCriticalSection, RtlInitializeCriticalSection, void(u32));
 REX_IMPORT(__imp__KeQueryPerformanceFrequency, KeQueryPerformanceFrequency, u32());
 REX_IMPORT(__imp__KeGetCurrentProcessType, KeGetCurrentProcessType, u32());
@@ -99,17 +102,18 @@ constexpr u32 kRingDataSize = 1u << 20;
 // offsets into the device allocation.
 // Byte whose 0x80 bit marks a device without GPU hardware (its device-type-2
 // path sets it); D3D's code skips hardware work for it.
-constexpr u32 kDeviceOffsetFlags = 10940;
+constexpr u32 kDeviceOffsetFlags = 0x28C0;  // kameo-nx
 constexpr u8 kDeviceFlagNoHardware = 0x80;
 // Byte whose 0x2 bit makes CDevice::SetFence (0x82246420) write each fence's
 // completion value itself instead of waiting for the GPU to. The title device
 // runs without it once created: its fences complete on the render thread.
-constexpr u32 kDeviceOffsetFlags2 = 10941;
-constexpr u8 kDeviceFlagImmediateFences = 0x02;
+// kameo-nx: 0x28C1 bit 0x04 here (SetFence sub_820CF838: `lbz r10,10433; rlwinm. r10,r10,0,29,29`).
+constexpr u32 kDeviceOffsetFlags2 = 0x28C1;
+constexpr u8 kDeviceFlagImmediateFences = 0x04;
 // Pointer to the completed-fence word IsFencePending / BlockOnFence read.
-constexpr u32 kDeviceOffsetFenceCompletion = 10896;
+constexpr u32 kDeviceOffsetFenceCompletion = 0x2890;  // kameo-nx
 // Nonzero while a KickOff is in progress (BlockOnFence does not kick then).
-constexpr u32 kDeviceOffsetInKickOff = 13216;  // katamari-nx: 13232->13216
+constexpr u32 kDeviceOffsetInKickOff = d3d::kDeviceOffsetInKickOff;  // kameo-nx: KickOff sub_820CFB10 reads +13520
 // Side buffer (0x12C0 bytes) every device gets.
 constexpr u32 kDeviceOffsetSideBuffer = 16704;  // katamari-nx: 16728->16704
 constexpr u32 kSideBufferSize = 0x12C0;
@@ -126,7 +130,7 @@ constexpr u32 kDeviceOffsetCriticalSection1 = 14948;  // katamari-nx: 14972->149
 constexpr u32 kDeviceOffsetPerfFrequency = 21560;  // katamari-nx: 21588->21560
 constexpr u32 kDeviceOffsetTitleMinusOne = 21672;  // katamari-nx: 23380->21672
 // Import slot holding the address of the kernel's VdGlobalDevice variable.
-constexpr u32 kVdGlobalDeviceImportSlot = 0x82000750;  // katamari-nx: 0x820007F8->0x82000750
+constexpr u32 kVdGlobalDeviceImportSlot = 0x8200051C;  // kameo-nx: D3DDevice_IsFencePending sub_820CFFB0 (`lis r11,0x8200; lwz r11,1308(r11)`)
 
 constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 
@@ -943,10 +947,11 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   });
   RunReadyCallbacks();
 
-  if (device) {
+  if (device)
     native::RewindRing(native::DeviceAt(device_va));
-    native::ResetAllState(native::DeviceAt(device_va));
-  }
+  // kameo-nx: the frame's end (the original's Swap runs on the game's Present and D3D's worker thread alike).
+  g_banjo_game_frames.fetch_add(1, std::memory_order_relaxed);
+  banjo::profiler::FrameBoundary();
   renutFrameLimit();  // katamari-nx: the player's frame_cap; the game's frames end here (it never calls Present)
 }
 
@@ -1216,11 +1221,19 @@ void D3D_CDevice_Uninitialize_hook(u32 device) {
 namespace renut::gpu::native {
 
 void RewindRing(Device device) {
-  if (!device || !g_ring_sink)
+  if (!device)
     return;
-  device.SetW(off::Ring, g_ring_sink);
-  device.SetW(off::RingLimit, g_ring_sink + kRingSinkSize);
-  device.SetW(off::RingGuarantee, g_ring_sink + kRingSinkSize - kRingSinkGuaranteeMargin);
+  if (!g_ring_sink)  // kameo-nx: the game's CreateDevice runs, not Renut's
+    g_ring_sink = records::AllocPhysicalBlock(kRingSinkSize);
+  if (!g_ring_sink)
+    return;
+  // kameo-nx: as StartNewSegment lays a segment out (RePowered's KickOff hook): the writers pre-increment.
+  device.SetW(off::Ring, g_ring_sink - 4);
+  device.SetW(off::RingLimit, g_ring_sink + kRingSinkSize - 52);
+  device.SetW(off::RingGuarantee, g_ring_sink + kRingSinkSize - 52 - 160);
+  device.SetW(d3d::kDeviceOffsetSegmentStart, g_ring_sink);
+  device.SetW(d3d::kDeviceOffsetSegmentPredication, 0);
+  device.SetW(d3d::kDeviceOffsetSegmentDataBytes, 0);
 }
 
 u32 KickOff(u32 device_va) {
@@ -1266,35 +1279,78 @@ void SetFence(u32 device_va) {
 
 } // namespace renut::gpu::native
 
-BANJO_RENUT_HOOK(sub_824E0590, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback  // katamari-nx: N&B sub_821CAF18, signature 0.88 (next 0.59)
-BANJO_RENUT_HOOK(sub_824D01C8, D3DDevice_AddRef_hook);  // D3DDevice_AddRef  // katamari-nx: N&B sub_82634AD0, signature 1.00 (next 0.43)
-BANJO_RENUT_HOOK(sub_824D0430, D3DDevice_AcquireThreadOwnership_hook);  // D3DDevice_AcquireThreadOwnership  // katamari-nx: N&B sub_82634B40, signature 1.00 (next 0.78)
-BANJO_RENUT_HOOK(sub_824D0470, D3DDevice_ReleaseThreadOwnership_hook);  // D3DDevice_ReleaseThreadOwnership  // katamari-nx: N&B sub_82634B80, signature 1.00 (next 0.46)
-BANJO_RENUT_HOOK(sub_824E6410, D3DDevice_GetDeviceCaps_hook);  // D3DDevice_GetDeviceCaps  // katamari-nx: N&B sub_82641480, D3DDevice_GetDeviceCaps: memcpy(out, 0x820FC1F8, 304), N&B's memcpy(out, 0x82161B30, 304)
-BANJO_RENUT_UNHOOKED_HOOK(sub_82641498, D3DDevice_GetDisplayMode_hook);  // D3DDevice_GetDisplayMode  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E67A0 0.38, next 0.35))
-BANJO_RENUT_UNHOOKED_HOOK(sub_8225D1D0, D3DDevice_BlockOnFence_hook);  // D3DDevice_BlockOnFence  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E8610 0.51, next 0.51))
-BANJO_RENUT_HOOK(sub_824E89E8, D3D_SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval  // katamari-nx: N&B sub_82258778, D3D_SynchronizeToPresentationInterval: called by Present before the resolve; sig 0.72/0.39
-BANJO_RENUT_UNHOOKED_HOOK(sub_8263D4B8, D3DResource_GetDevice_hook);  // D3DResource_GetDevice  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E8610 0.43, next 0.43))
-BANJO_RENUT_UNHOOKED_HOOK(sub_82BC8078, D3D_IsFusion_hook);  // D3D_IsFusion  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824903A8 0.56, next 0.43))
-BANJO_RENUT_HOOK(sub_824DE218, D3DDevice_SetGammaRamp_hook);  // D3DDevice_SetGammaRamp  // katamari-nx: N&B sub_82636F48, D3DDevice_SetGammaRamp: InitializePresentationParameters calls it, then SetPWLGamma, in N&B's order; sig 0.63 for both
-BANJO_RENUT_HOOK(sub_824DE2F8, D3DDevice_SetPWLGamma_hook);  // D3DDevice_SetPWLGamma  // katamari-nx: N&B sub_82637018, D3DDevice_SetPWLGamma: as above
-BANJO_RENUT_HOOK(sub_824D0598, Direct3D_CreateDevice_hook);  // Direct3D_CreateDevice  // katamari-nx: N&B sub_82634990, Direct3D_CreateDevice: allocates the 0x5700 device (li r3,22272 / 128 alignment, sub_824D0240), calls the device init sub_824E18D0 (XenonGpu_Initialize, InitializePresentationParameters, InitializeApiState); sig 0.39 because N&B inlines that init
-BANJO_RENUT_HOOK(sub_824D0368, D3DDevice_Release_hook);  // D3DDevice_Release  // katamari-nx: N&B sub_82634AE8, signature 1.00 (next 0.59)
-BANJO_RENUT_HOOK(sub_824ED278, D3D_XenonGpu_Initialize_hook);  // D3D_XenonGpu_Initialize  // katamari-nx: N&B sub_8264B748, D3D_XenonGpu_Initialize: called by the device init sub_824E18D0 after the -1 words; sig 0.66/0.23
-BANJO_RENUT_HOOK(sub_824E11A0, D3D_InitializeApiState_hook);  // D3D_InitializeApiState  // katamari-nx: N&B sub_82641BC8, D3D_InitializeApiState: called by the device init; reads PresentInterval +13572 and BehaviorFlags +22264; sig 0.58/0.25
-BANJO_RENUT_HOOK(sub_824E1408, D3D_InitializePresentationParameters_hook);  // D3D_InitializePresentationParameters  // katamari-nx: N&B sub_82641EA8, D3D_InitializePresentationParameters: makes the auto surfaces (+14800..14808) with CreateTexture / CreateSurface; sig 0.65/0.27
-BANJO_RENUT_HOOK(sub_824E1B50, D3D_CDevice_Uninitialize_hook);  // D3D_CDevice_Uninitialize  // katamari-nx: N&B sub_82642568, D3D_CDevice_Uninitialize: VdShutdownEngines, VdSetGraphicsInterruptCallback; sig 0.40/0.26
-BANJO_RENUT_HOOK(sub_824E0298, KickOff_hook);  // D3D_CDevice_KickOff  // katamari-nx: N&B sub_821DFFF0, signature 0.80 (next 0.41)
-BANJO_RENUT_HOOK(sub_824E0110, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment  // katamari-nx: N&B sub_821DFC08, D3D_CDevice_KickOffSegment: sig 0.71/0.31; CommandBuffer +13492, InKickOff +13216 as the zones say
-BANJO_RENUT_HOOK(sub_824E04B0, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig  // katamari-nx: N&B sub_821C7360, D3D_CDevice_BeginRingBig: sig 0.67/0.32
-BANJO_RENUT_HOOK(sub_8255A200, BeginRingManual_hook);  // D3D_CDevice_BeginRingManual  // katamari-nx: N&B sub_82A6DD88, signature 1.00 (next 0.46)
-BANJO_RENUT_HOOK(sub_824DF3F0, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate  // katamari-nx: N&B sub_821FC4B8, D3D_RingBufferDeviceAllocate: sig 0.61/0.31
-BANJO_RENUT_UNHOOKED_HOOK(sub_821FC318, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824DFF98 0.38, next 0.31))
-BANJO_RENUT_HOOK(sub_824E05E8, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters  // katamari-nx: N&B sub_82640090, D3DDevice_SetRingBufferParameters: the VdInitializeRingBuffer caller; sig 0.70/0.21
-BANJO_RENUT_HOOK(sub_824E8E90, D3DDevice_Swap_hook);  // D3DDevice_Swap  // katamari-nx: N&B sub_822554F8, D3DDevice_Swap: the only VdSwap caller; sig 0.53/0.26
-BANJO_RENUT_UNHOOKED_HOOK_SHARED(sub_82640818, D3DDevice_BeginCommandBuffer_hook);  // D3DDevice_BeginCommandBuffer  // katamari-nx: not hooked (D3DDevice_BeginCommandBuffer: no clear counterpart (sig 0.27); census first)
-BANJO_RENUT_UNHOOKED_HOOK(sub_82640DE8, D3DDevice_EndCommandBuffer_hook);  // D3DDevice_EndCommandBuffer  // katamari-nx: not hooked (D3DDevice_EndCommandBuffer: no clear counterpart (sig 0.49/0.48))
-BANJO_RENUT_UNHOOKED_HOOK_SHARED(sub_821F1A78, D3DDevice_RunCommandBuffer_hook);  // D3DDevice_RunCommandBuffer  // katamari-nx: not hooked (D3DDevice_RunCommandBuffer: no clear counterpart (sig 0.50/0.48))
-BANJO_RENUT_HOOK(sub_824DFC48, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence  // katamari-nx: N&B sub_8225D370, D3D_CDevice_BlockOnFence: sig 0.55/0.32
-BANJO_RENUT_HOOK(sub_824D0290, CBlocker_Check_hook);  // D3D_CBlocker_Check  // katamari-nx: N&B sub_82634740, D3D_CBlocker_Check: sig 0.66/0.26
-BANJO_RENUT_HOOK(sub_824E03D0, IsFencePending_hook);  // D3DDevice_IsFencePending  // katamari-nx: N&B sub_8225D468, D3DDevice_IsFencePending: sig 0.71/0.47
+// kameo-nx: the game's functions this file's handlers take, read in this image (RePowered's names through its TU map):
+BANJO_RENUT_HOOK(sub_820CFB10, KickOff_hook);  // D3D::CDevice::KickOff (RePowered sub_820CDC88)
+BANJO_RENUT_HOOK(sub_820D1860, D3DDevice_Swap_hook);  // D3DDevice_Swap(device, front buffer, parameters) (RePowered sub_820CF9D8)
+BANJO_RENUT_HOOK(sub_820CFFB0, IsFencePending_hook);  // D3DDevice_IsFencePending (RePowered sub_820CE128)
+// D3D::CDevice::BlockOnFence(CDevice*, uint *fence) (RePowered sub_820CDD80): the fence by pointer in this XDK.
+BANJO_RENUT_HOOK_RAW(sub_820CFC08) {
+  const auto *fence = GuestPtr<const be_u32>(ctx.r4.u32);
+  if (fence)
+    BlockOnFence_hook(ctx.r3.u32, u32(*fence), 0, 0);
+}
+// D3DDevice_BlockUntilIdle(D3DDevice*) (RePowered sub_820CE0A0): the current fence, kicked and waited for.
+BANJO_RENUT_HOOK_RAW(sub_820CFF28) {
+  const u32 device_va = ctx.r3.u32;
+  if (auto *bytes = GuestPtr<u8>(device_va)) {
+    const u32 fence = *reinterpret_cast<const be_u32 *>(bytes + d3d::kDeviceOffsetFenceTag);
+    BlockOnFence_hook(device_va, fence, 0, 0);
+  }
+}
+// D3D::RingBufferDeviceAllocate(context, device, flags, size*, alignment), through device +13604 (RePowered sub_820CD188):
+// flag 1 asks for vertex data, else for a command segment.
+BANJO_RENUT_HOOK_RAW(sub_820CF010) {
+  auto *size = GuestPtr<be_u32>(ctx.r6.u32);
+  if (!size) {
+    ctx.r3.u64 = 0;
+    return;
+  }
+  if (!g_ring_sink)
+    g_ring_sink = records::AllocPhysicalBlock(kRingSinkSize);
+  if (!g_ring_data)
+    g_ring_data = records::AllocPhysicalBlock(kRingDataSize);
+  if (ctx.r5.u32 & 1) {
+    ctx.r3.u64 = RingData(u32(*size), 16);
+    return;
+  }
+  *size = kRingSinkSize;
+  ctx.r3.u64 = g_ring_sink;
+}
+// D3D::CDevice::BlockOnPrimaryRange(CDevice*, pos, size) -> the wrapped end (RePowered sub_820CD578): nothing reads the ring.
+BANJO_RENUT_HOOK_RAW(sub_820CF400) {
+  const u32 end = ctx.r4.u32 + ctx.r5.u32;
+  const auto *mask = GuestPtr<const be_u32>(ctx.r3.u32 + d3d::kDeviceOffsetPrimaryRingMask);
+  ctx.r3.u64 = ctx.r3.u32 && mask ? end & u32(*mask) : end;
+}
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E0590, D3DDevice_InsertCallback_hook);  // D3DDevice_InsertCallback  // katamari-nx: N&B sub_821CAF18, signature 0.88 (next 0.59)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D01C8, D3DDevice_AddRef_hook);  // D3DDevice_AddRef  // katamari-nx: N&B sub_82634AD0, signature 1.00 (next 0.43)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D0430, D3DDevice_AcquireThreadOwnership_hook);  // D3DDevice_AcquireThreadOwnership  // katamari-nx: N&B sub_82634B40, signature 1.00 (next 0.78)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D0470, D3DDevice_ReleaseThreadOwnership_hook);  // D3DDevice_ReleaseThreadOwnership  // katamari-nx: N&B sub_82634B80, signature 1.00 (next 0.46)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E6410, D3DDevice_GetDeviceCaps_hook);  // D3DDevice_GetDeviceCaps  // katamari-nx: N&B sub_82641480, D3DDevice_GetDeviceCaps: memcpy(out, 0x820FC1F8, 304), N&B's memcpy(out, 0x82161B30, 304)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_82641498, D3DDevice_GetDisplayMode_hook);  // D3DDevice_GetDisplayMode  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E67A0 0.38, next 0.35))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_8225D1D0, D3DDevice_BlockOnFence_hook);  // D3DDevice_BlockOnFence  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E8610 0.51, next 0.51))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E89E8, D3D_SynchronizeToPresentationInterval_hook);  // D3D_SynchronizeToPresentationInterval  // katamari-nx: N&B sub_82258778, D3D_SynchronizeToPresentationInterval: called by Present before the resolve; sig 0.72/0.39
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_8263D4B8, D3DResource_GetDevice_hook);  // D3DResource_GetDevice  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824E8610 0.43, next 0.43))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_82BC8078, D3D_IsFusion_hook);  // D3D_IsFusion  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824903A8 0.56, next 0.43))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DE218, D3DDevice_SetGammaRamp_hook);  // D3DDevice_SetGammaRamp  // katamari-nx: N&B sub_82636F48, D3DDevice_SetGammaRamp: InitializePresentationParameters calls it, then SetPWLGamma, in N&B's order; sig 0.63 for both
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DE2F8, D3DDevice_SetPWLGamma_hook);  // D3DDevice_SetPWLGamma  // katamari-nx: N&B sub_82637018, D3DDevice_SetPWLGamma: as above
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D0598, Direct3D_CreateDevice_hook);  // Direct3D_CreateDevice  // katamari-nx: N&B sub_82634990, Direct3D_CreateDevice: allocates the 0x5700 device (li r3,22272 / 128 alignment, sub_824D0240), calls the device init sub_824E18D0 (XenonGpu_Initialize, InitializePresentationParameters, InitializeApiState); sig 0.39 because N&B inlines that init
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D0368, D3DDevice_Release_hook);  // D3DDevice_Release  // katamari-nx: N&B sub_82634AE8, signature 1.00 (next 0.59)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824ED278, D3D_XenonGpu_Initialize_hook);  // D3D_XenonGpu_Initialize  // katamari-nx: N&B sub_8264B748, D3D_XenonGpu_Initialize: called by the device init sub_824E18D0 after the -1 words; sig 0.66/0.23
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E11A0, D3D_InitializeApiState_hook);  // D3D_InitializeApiState  // katamari-nx: N&B sub_82641BC8, D3D_InitializeApiState: called by the device init; reads PresentInterval +13572 and BehaviorFlags +22264; sig 0.58/0.25
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E1408, D3D_InitializePresentationParameters_hook);  // D3D_InitializePresentationParameters  // katamari-nx: N&B sub_82641EA8, D3D_InitializePresentationParameters: makes the auto surfaces (+14800..14808) with CreateTexture / CreateSurface; sig 0.65/0.27
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E1B50, D3D_CDevice_Uninitialize_hook);  // D3D_CDevice_Uninitialize  // katamari-nx: N&B sub_82642568, D3D_CDevice_Uninitialize: VdShutdownEngines, VdSetGraphicsInterruptCallback; sig 0.40/0.26
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E0298, KickOff_hook);  // D3D_CDevice_KickOff  // katamari-nx: N&B sub_821DFFF0, signature 0.80 (next 0.41)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E0110, KickOffSegment_hook);  // D3D_CDevice_KickOffSegment  // katamari-nx: N&B sub_821DFC08, D3D_CDevice_KickOffSegment: sig 0.71/0.31; CommandBuffer +13492, InKickOff +13216 as the zones say
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E04B0, BeginRingBig_hook);  // D3D_CDevice_BeginRingBig  // katamari-nx: N&B sub_821C7360, D3D_CDevice_BeginRingBig: sig 0.67/0.32
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_8255A200, BeginRingManual_hook);  // D3D_CDevice_BeginRingManual  // katamari-nx: N&B sub_82A6DD88, signature 1.00 (next 0.46)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DF3F0, RingBufferDeviceAllocate_hook);  // D3D_RingBufferDeviceAllocate  // katamari-nx: N&B sub_821FC4B8, D3D_RingBufferDeviceAllocate: sig 0.61/0.31
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_821FC318, AllocateInlineData_hook);  // D3D_CDevice_AllocateInlineData  // katamari-nx: not hooked (signature too weak or ambiguous (sub_824DFF98 0.38, next 0.31))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E05E8, D3DDevice_SetRingBufferParameters_hook);  // D3DDevice_SetRingBufferParameters  // katamari-nx: N&B sub_82640090, D3DDevice_SetRingBufferParameters: the VdInitializeRingBuffer caller; sig 0.70/0.21
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E8E90, D3DDevice_Swap_hook);  // D3DDevice_Swap  // katamari-nx: N&B sub_822554F8, D3DDevice_Swap: the only VdSwap caller; sig 0.53/0.26
+BANJO_RENUT_UNHOOKED_HOOK_SHARED(unlinked_82640818, D3DDevice_BeginCommandBuffer_hook);  // D3DDevice_BeginCommandBuffer  // katamari-nx: not hooked (D3DDevice_BeginCommandBuffer: no clear counterpart (sig 0.27); census first)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_82640DE8, D3DDevice_EndCommandBuffer_hook);  // D3DDevice_EndCommandBuffer  // katamari-nx: not hooked (D3DDevice_EndCommandBuffer: no clear counterpart (sig 0.49/0.48))
+BANJO_RENUT_UNHOOKED_HOOK_SHARED(unlinked_821F1A78, D3DDevice_RunCommandBuffer_hook);  // D3DDevice_RunCommandBuffer  // katamari-nx: not hooked (D3DDevice_RunCommandBuffer: no clear counterpart (sig 0.50/0.48))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DFC48, BlockOnFence_hook);  // D3D_CDevice_BlockOnFence  // katamari-nx: N&B sub_8225D370, D3D_CDevice_BlockOnFence: sig 0.55/0.32
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D0290, CBlocker_Check_hook);  // D3D_CBlocker_Check  // katamari-nx: N&B sub_82634740, D3D_CBlocker_Check: sig 0.66/0.26
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E03D0, IsFencePending_hook);  // D3DDevice_IsFencePending  // katamari-nx: N&B sub_8225D468, D3DDevice_IsFencePending: sig 0.71/0.47

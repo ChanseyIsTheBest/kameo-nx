@@ -252,6 +252,7 @@ function(renut_gpu_setup TARGET)
         # The guest D3D runtime, native, and its hooks.
         ${RENUT_GPU_DIR}/d3d/d3d_native_state.cpp
         ${RENUT_GPU_DIR}/d3d/hooks/device.cpp
+        ${RENUT_GPU_DIR}/d3d/hooks/kameo_d3d.cpp
         ${RENUT_GPU_DIR}/d3d/hooks/draw.cpp
         ${RENUT_GPU_DIR}/d3d/hooks/resource.cpp
         ${RENUT_GPU_DIR}/d3d/hooks/shader.cpp

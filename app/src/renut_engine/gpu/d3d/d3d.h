@@ -42,7 +42,17 @@ enum class ResourceType : u32 {
 };
 constexpr u32 kCommonTypeMask = 0xF;
 
+// kameo-nx: XDK 2.0.2135's resource head is 12 bytes: Common (the reference count in its low byte, the type in bits 16-18,
+// D3DResource_GetType sub_820D51C0), the fence, and a word (zuma-nx's notes). The renderer's own records keep N&B's head
+// (RecordResource): the game's objects are never those.
 struct Resource {
+  be_u32 Common;     // +0x00
+  be_u32 Fence;      // +0x04
+  be_u32 BaseFlush;  // +0x08
+};
+static_assert(sizeof(Resource) == 12);
+
+struct RecordResource {
   be_u32 Common;          // +0x00
   be_u32 ReferenceCount;  // +0x04
   be_u32 Fence;           // +0x08
@@ -50,7 +60,7 @@ struct Resource {
   be_u32 Identifier;      // +0x10
   be_u32 BaseFlush;       // +0x14
 };
-static_assert(sizeof(Resource) == 24);
+static_assert(sizeof(RecordResource) == 24);
 
 struct TextureFetchConstant {
   be_u32 dword[6];
@@ -73,34 +83,33 @@ static_assert(sizeof(VertexFetchConstant) == 8);
 // D3DBaseTexture / D3DTexture / D3DCubeTexture / D3DVolumeTexture / D3DLineTexture.
 struct BaseTexture {
   Resource resource;            // +0x00
-  be_u32 MipFlush;              // +0x18
-  TextureFetchConstant Format;  // +0x1C
+  be_u32 MipFlush;              // +0x0C
+  TextureFetchConstant Format;  // +0x10
 };
-static_assert(sizeof(BaseTexture) == 52);
-static_assert(offsetof(BaseTexture, Format) == 0x1C);
+static_assert(sizeof(BaseTexture) == 40);
+static_assert(offsetof(BaseTexture, Format) == 0x10);
 
 struct Surface {
-  Resource resource;   // +0x00
-  be_u32 word[6];      // +0x18 union (surface/depth info, size, format)
+  be_u32 word[16];  // kameo-nx: 64 bytes in XDK 2.0.2135 (ReadSurfaceDesc)
 };
-static_assert(sizeof(Surface) == 48);
+static_assert(sizeof(Surface) == 64);
 
 struct VertexBuffer {
   Resource resource;           // +0x00
-  VertexFetchConstant Format;  // +0x18
+  VertexFetchConstant Format;  // +0x0C
 };
-static_assert(sizeof(VertexBuffer) == 32);
+static_assert(sizeof(VertexBuffer) == 20);
 
 struct IndexBuffer {
   Resource resource;  // +0x00
-  be_u32 Address;     // +0x18
-  be_u32 Size;        // +0x1C
+  be_u32 Address;     // +0x0C
+  be_u32 Size;        // +0x10
 };
-static_assert(sizeof(IndexBuffer) == 32);
+static_assert(sizeof(IndexBuffer) == 20);
 
 // D3DVertexShader / D3DPixelShader / D3DVertexDeclaration headers.
 struct Shader {
-  Resource resource;
+  RecordResource resource;
 };
 static_assert(sizeof(Shader) == 24);
 
@@ -213,103 +222,125 @@ struct ControlPacket {
 };
 static_assert(sizeof(ControlPacket) == 48);
 
-// Public D3DDevice (0x2B00 bytes in N&B's XDK) followed by the CDevice-private
-// tail of the 0x5E00-byte allocation Direct3D_CreateDevice makes.
-constexpr u32 kDeviceAllocSize = 0x5700;  // katamari-nx: 0x5E00->0x5700
+// kameo-nx (2026-11-02): the device is the game's own, XDK 2.0.2135's layout (with the title update's 16 bytes from 0x34D8):
+// its setters are compiled into the game (D3D9LTCG), so this is what they write. From the game's flush sub_820D7128 and
+// setters, RePowered's src/gpu/guest_device.h and guest_state.h: the register image's blocks are N&B's order, the packets
+// 0x440 further on than N&B's, the private words between them.
+constexpr u32 kDeviceAllocSize = 0x5700;  // not allocated here: the game's own Direct3D_CreateDevice makes the device
 constexpr u32 kDeviceAlignment = 0x80;
 
 struct Device {
-  be_u64 m_Pending[5];                // +0x0000  D3DTAGCOLLECTION dirty masks
-  be_u64 m_Predicated_PendingMask2;   // +0x0028
-  be_u32 m_pRing;                     // +0x0030
-  be_u32 m_pRingLimit;                // +0x0034
-  be_u32 m_pRingGuarantee;            // +0x0038
-  be_u32 m_ReferenceCount;            // +0x003C
-  be_u32 m_SetRenderStateCall[101];   // +0x0040
-  be_u32 m_SetSamplerStateCall[20];   // +0x01D4
-  be_u32 m_GetRenderStateCall[101];   // +0x0224
+  be_u32 m_pRing;                     // +0x0000  the command write pointer
+  be_u32 m_pRingHardEnd;              // +0x0004  its segment's end
+  be_u32 m_pRingLimit;                // +0x0008  that less 160: past it, KickOff
+  be_u32 m_ReferenceCount;            // +0x000C
+  be_u64 m_Pending[5];                // +0x0010  dirty masks: vertex constants, pixel constants, fetch and destination, packets, misc
+  u8 pad_0038[0x60 - 0x38];           // +0x0038
+  be_u32 m_SetRenderStateCall[97];    // +0x0060
+  be_u32 m_SetSamplerStateCall[20];   // +0x01E4
+  be_u32 m_GetRenderStateCall[97];    // +0x0234
   be_u32 m_GetSamplerStateCall[20];   // +0x03B8
   u8 pad_0408[0x480 - 0x408];         // +0x0408
   Constants m_Constants;              // +0x0480
   be_f32 m_ClipPlanes[6][4];          // +0x2820
-  DestinationPacket m_DestinationPacket;  // +0x2880
-  WindowPacket m_WindowPacket;        // +0x28C0
-  ValuesPacket m_ValuesPacket;        // +0x28CC
-  ProgramPacket m_ProgramPacket;      // +0x2920
-  ControlPacket m_ControlPacket;      // +0x2934
-  u8 m_TessellatorPacket[84];         // +0x2964
-  u8 m_MiscPacket[152];               // +0x29B8
-  u8 m_PointPacket[32];               // +0x2A50
-  u8 m_MaxAnisotropy[26];             // +0x2A70
-  u8 m_ZFilter[26];                   // +0x2A8A
-  u8 pad_2AA4[0x2B00 - 0x2AA4];       // +0x2AA4
-  u8 private_[kDeviceAllocSize - 0x2B00];  // +0x2B00  CDevice private state
+  u8 private_2880[0x2CC0 - 0x2880];   // +0x2880  fences, flags, the declaration pointer (+0x2C90)
+  DestinationPacket m_DestinationPacket;  // +0x2CC0
+  WindowPacket m_WindowPacket;        // +0x2D00
+  ValuesPacket m_ValuesPacket;        // +0x2D0C
+  ProgramPacket m_ProgramPacket;      // +0x2D60
+  ControlPacket m_ControlPacket;      // +0x2D74
+  u8 m_TessellatorPacket[84];         // +0x2DA4
+  u8 m_MiscPacket[152];               // +0x2DF8
+  u8 m_PointPacket[32];               // +0x2E90
+  u8 private_2EB0[kDeviceAllocSize - 0x2EB0];  // +0x2EB0
 };
 static_assert(sizeof(Device) == kDeviceAllocSize);
-static_assert(offsetof(Device, m_pRing) == 0x30);
-static_assert(offsetof(Device, m_ReferenceCount) == 0x3C);
-static_assert(offsetof(Device, m_SetRenderStateCall) == 0x40);
-static_assert(offsetof(Device, m_SetSamplerStateCall) == 0x1D4);
-static_assert(offsetof(Device, m_GetRenderStateCall) == 0x224);
+static_assert(offsetof(Device, m_pRing) == 0);
+static_assert(offsetof(Device, m_ReferenceCount) == 0xC);
+static_assert(offsetof(Device, m_Pending) == 0x10);
+static_assert(offsetof(Device, m_SetRenderStateCall) == 0x60);
+static_assert(offsetof(Device, m_SetSamplerStateCall) == 0x1E4);
+static_assert(offsetof(Device, m_GetRenderStateCall) == 0x234);
 static_assert(offsetof(Device, m_GetSamplerStateCall) == 0x3B8);
 static_assert(offsetof(Device, m_Constants) == 0x480);
 static_assert(offsetof(Device, m_ClipPlanes) == 0x2820);
-static_assert(offsetof(Device, m_DestinationPacket) == 0x2880);
-static_assert(offsetof(Device, m_WindowPacket) == 0x28C0);
-static_assert(offsetof(Device, m_ValuesPacket) == 0x28CC);
-static_assert(offsetof(Device, m_ProgramPacket) == 0x2920);
-static_assert(offsetof(Device, m_ControlPacket) == 0x2934);
-static_assert(offsetof(Device, m_TessellatorPacket) == 0x2964);
-static_assert(offsetof(Device, m_MiscPacket) == 0x29B8);
-static_assert(offsetof(Device, m_PointPacket) == 0x2A50);
-static_assert(offsetof(Device, m_MaxAnisotropy) == 0x2A70);
-static_assert(offsetof(Device, m_ZFilter) == 0x2A8A);
+static_assert(offsetof(Device, m_DestinationPacket) == 0x2CC0);
+static_assert(offsetof(Device, m_WindowPacket) == 0x2D00);
+static_assert(offsetof(Device, m_ValuesPacket) == 0x2D0C);
+static_assert(offsetof(Device, m_ProgramPacket) == 0x2D60);
+static_assert(offsetof(Device, m_ControlPacket) == 0x2D74);
+static_assert(offsetof(Device, m_TessellatorPacket) == 0x2DA4);
+static_assert(offsetof(Device, m_MiscPacket) == 0x2DF8);
+static_assert(offsetof(Device, m_PointPacket) == 0x2E90);
 
-// CDevice-private fields Direct3D_CreateDevice initialises (byte offsets into
-// the allocation, from its decompilation at 0x82634990).
-constexpr u32 kDeviceOffsetCreationThreadId = 10888;  // GetCurrentThreadId()
-constexpr u32 kDeviceOffsetIsTitleProcess = 10892;    // KeGetCurrentProcessType() == 2
-constexpr u32 kDeviceOffsetBehaviorFlags = 22264;     // Direct3D_CreateDevice arg 4 (katamari-nx: 23980->22264)
+// The words Renut's own hooks keep in the device (kameo_d3d.cpp), inside the snapshot, none of which the game reads or
+// writes (tools/d3d_disp.py over the whole code range: no D-form access to 0x3254-0x325F):
+//   the id of the vertex declaration's record (the game's object is read on the game thread: it reuses addresses),
+//   the vertex shader (the game keeps it at +0x4FE8, past the snapshot),
+//   the predication (no tiling in this game: always ~0).
+constexpr u32 kKameoDeclarationId = 0x3254;
+constexpr u32 kKameoVertexShaderMirror = 0x3258;
+constexpr u32 kKameoPredication = 0x325C;
+// The game's own words these stand for.
+constexpr u32 kGameDeviceVertexDeclaration = 0x2C90;  // SetVertexDeclaration sub_820CA848
+constexpr u32 kGameDeviceVertexShader = 0x4FE8;       // SetVertexShader sub_820CA7E0
 
-// Bound objects the Set* calls store in the CDevice-private area (guest VAs).
-// TU3's CDevice grew by 4 bytes from 0x2AC0 and by 8 from 0x2E30; the fields
-// from 0x3390 on are where they were.
-constexpr u32 kDeviceOffsetVertexDeclaration = 0x2E24;  // SetVertexDeclaration (katamari-nx: 0x2E30->0x2E24)
-constexpr u32 kDeviceOffsetIndexBuffer = 0x308C;        // SetIndices (katamari-nx: 0x309C->0x308C)
-constexpr u32 kDeviceOffsetRenderTargets = 0x3090;      // SetRenderTarget, [4] (katamari-nx: 0x30A0->0x3090)
-constexpr u32 kDeviceOffsetDepthStencil = 0x30A0;       // SetDepthStencilSurface (katamari-nx: 0x30B0->0x30A0)
-constexpr u32 kDeviceOffsetStreamSources = 0x30A4;      // SetStreamSource, [16] (katamari-nx: 0x30B4->0x30A4)
-constexpr u32 kDeviceOffsetStreamStrides = 0x30E8;      // SetStreamSource, u8[16], stride / 4 (katamari-nx: 0x30F8->0x30E8)
-constexpr u32 kDeviceOffsetTextures = 0x30F8;           // SetTexture, [kTextureFetchSlots] (katamari-nx: 0x3108->0x30F8)
-constexpr u32 kDeviceOffsetPixelShader = 0x318C;        // SetPixelShader (katamari-nx: 0x319C->0x318C)
-constexpr u32 kDeviceOffsetVertexShader = 0x3190;       // SetVertexShader (katamari-nx: 0x31A0->0x3190)
+constexpr u32 kDeviceOffsetCreationThreadId = 0x2888;
+constexpr u32 kDeviceOffsetIsTitleProcess = 0x288C;
+constexpr u32 kDeviceOffsetBehaviorFlags = 0x5040;  // not read here
+
+// Bound objects the Set* calls store in the private area (guest VAs).
+constexpr u32 kDeviceOffsetVertexDeclaration = kKameoDeclarationId;
+constexpr u32 kDeviceOffsetIndexBuffer = 0x30F4;        // SetIndices
+constexpr u32 kDeviceOffsetRenderTargets = 0x30F8;      // SetRenderTarget, [4]
+constexpr u32 kDeviceOffsetDepthStencil = 0x3108;       // SetDepthStencilSurface
+constexpr u32 kDeviceOffsetStreamSources = 0x310C;      // SetStreamSource, [16] of {offset, buffer}
+constexpr u32 kDeviceOffsetStreamStrides = 0x3190;      // SetStreamSource, u8[16], stride / 4
+constexpr u32 kDeviceOffsetTextures = 0x31A0;           // SetTexture, [kTextureFetchSlots]
+constexpr u32 kDeviceOffsetViewport = 0x3208;           // D3DVIEWPORT9: four words, then two floats
+constexpr u32 kDeviceOffsetScissorRect = 0x3220;        // SetScissorRect's RECT
+constexpr u32 kDeviceOffsetPixelShader = 0x3290;        // SetPixelShader
+constexpr u32 kDeviceOffsetVertexShader = kKameoVertexShaderMirror;
+// kameo-nx: the stream's vertex buffer (XDK 2.0.2135 keeps {offset, buffer} per stream; N&B the buffer alone).
+constexpr u32 StreamSourceOffset(u32 stream) {
+  return kDeviceOffsetStreamSources + 4 + stream * 8;
+}
 // In m_TessellatorPacket, which holds registers 0x2280 on: VGT_HOS_CNTL
 // (tessellation mode in bits 0-1: 0 discrete, 1 continuous, 2 adaptive) and
 // the float VGT_HOS_MAX_TESS_LEVEL / VGT_HOS_MIN_TESS_LEVEL.
-constexpr u32 kDeviceOffsetTessellationControl = 0x2978;
-constexpr u32 kDeviceOffsetMaxTessellationLevel = 0x297C;
-constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2980;
-// Tile predication mask of the draws that follow, ~0 for none
-// (D3DDevice_SetPredication 0x821C9240 and SetCommandBufferPredication).
-// Bits 2i and 2i+1 run the commands in tile i's pass of predicated tiling (Z
-// and render).
-constexpr u32 kDeviceOffsetPredication = 0x319C;  // katamari-nx: 0x31AC->0x319C
-// D3DCommandBuffer being recorded (BeginCommandBuffer sets, End clears).
-constexpr u32 kDeviceOffsetCommandBuffer = 13492;  // katamari-nx: 13516->13492
-// The leading part of the device the draw, clear and resolve paths read (up
-// to and including kDeviceOffsetPredication); a copy of it stands in for the
-// device when a recorded command buffer is replayed.
-constexpr u32 kDeviceSnapshotSize = 0x31A0;  // katamari-nx: 0x31B0->0x31A0
+constexpr u32 kDeviceOffsetTessellationControl = 0x2DB8;
+constexpr u32 kDeviceOffsetMaxTessellationLevel = 0x2DBC;
+constexpr u32 kDeviceOffsetMinTessellationLevel = 0x2DC0;
+constexpr u32 kDeviceOffsetPredication = kKameoPredication;
+// D3DCommandBuffer being recorded: none in this game; a word of the device that stays 0.
+constexpr u32 kDeviceOffsetCommandBuffer = 0x3250;
+// The leading part of the device the draw, clear and resolve paths read; a copy of it stands in for the device on the
+// render thread.
+constexpr u32 kDeviceSnapshotSize = 0x32A0;
 static_assert(kDeviceOffsetVertexShader + 4 <= kDeviceSnapshotSize);
 static_assert(kDeviceOffsetPredication + 4 <= kDeviceSnapshotSize);
-// m_pRing the inline end of BeginVertices / BeginIndexedVertices restores.
-constexpr u32 kDeviceOffsetVerticesRingEnd = 0x3474;  // katamari-nx: 0x3484->0x3474
-// Swap bookkeeping (D3DDevice_Swap 0x822554F8).
-constexpr u32 kDeviceOffsetSwapCount = 0x4098;  // katamari-nx: 0x40B0->0x4098
-constexpr u32 kDeviceOffsetFenceTag = 0x2A9C;         // current fence tag
-constexpr u32 kDeviceOffsetSwapFenceTag = 0x2AB0;     // fence tag at the last Swap
-constexpr u32 kDeviceOffsetPresentFenceTag = 0x3A44;  // fence tag of the last presented frame (katamari-nx: 0x3A5C->0x3A44)
-constexpr u32 kDeviceOffsetSwapFlags = 0x2ABD;
+static_assert(kDeviceOffsetPixelShader + 4 <= kDeviceSnapshotSize);
+// The write pointer the inline end of BeginVertices restores (RePowered's kBeginVerticesResume), the vertex pointer and its
+// dword count after it (with the update's 16 bytes).
+constexpr u32 kDeviceOffsetVerticesRingEnd = 0x3544;
+constexpr u32 kDeviceOffsetVerticesData = 0x3548;
+constexpr u32 kDeviceOffsetIndicesData = 0x354C;
+constexpr u32 kDeviceOffsetVerticesDwords = 0x3550;
+constexpr u32 kDeviceOffsetIndicesDwords = 0x3554;
+// The ring's segment words StartNewSegment lays out (RePowered's, with the update's 16 bytes).
+constexpr u32 kDeviceOffsetSegmentPredication = 0x36B0;
+constexpr u32 kDeviceOffsetSegmentStart = 0x36BC;
+constexpr u32 kDeviceOffsetSegmentDataBytes = 0x36C0;
+constexpr u32 kDeviceOffsetPrimaryRingMask = 0x36A0;
+// Fences: the pointer to the word the GPU writes and the CPU's next fence (BlockOnFence sub_820CFC08; SetFence
+// sub_820CF838 adds 2).
+constexpr u32 kDeviceOffsetFenceCompletion = 0x2890;
+constexpr u32 kDeviceOffsetFenceTag = 0x289C;
+constexpr u32 kDeviceOffsetInKickOff = 0x34D0;  // KickOff, BlockOnFence: nonzero while a kick runs
+constexpr u32 kDeviceOffsetSwapCount = 0x4098;  // not used by the game's device here (the Swap hook does not count)
+constexpr u32 kDeviceOffsetSwapFenceTag = 0x2AB0;     // not used here
+constexpr u32 kDeviceOffsetPresentFenceTag = 0x3A44;  // not used here
+constexpr u32 kDeviceOffsetSwapFlags = 0x28C1;
 constexpr u8 kSwapFlagPending = 0x10;
 
 constexpr u32 kMaxStreams = 16;
@@ -326,16 +357,32 @@ constexpr u32 IndexBufferEndian(u32 common) {
   return (common >> 29) & 3;
 }
 
-// D3DSURFACE after its Resource header (SetSurfaceHeader 0x8263E60C).
+// What Renut reads of a surface (N&B's D3DSURFACE after its Resource header).
 struct SurfaceDesc {
-  be_u32 SurfaceInfo;  // +0x18 RB_SURFACE_INFO: pitch 0-13, msaa 16-17
-  be_u32 ColorInfo;    // +0x1C RB_COLOR_INFO / RB_DEPTH_INFO: EDRAM base, format at 16
-  be_u32 HiControl;    // +0x20
-  be_u32 Size;         // +0x24 (height - 1) << 3 | (width - 1) << 18
-  be_u32 Format;       // +0x28 D3DFORMAT
-  be_u32 EdramSize;    // +0x2C bytes (5120 per tile)
+  u32 SurfaceInfo;  // RB_SURFACE_INFO: pitch 0-13, msaa 16-17
+  u32 ColorInfo;    // RB_COLOR_INFO / RB_DEPTH_INFO: EDRAM base, format at 16
+  u32 HiControl;
+  u32 Size;         // (height - 1) << 3 | (width - 1) << 18, N&B's form
+  u32 Format;       // D3DFORMAT's low 6 bits are all that is read
+  u32 EdramSize;    // bytes (5120 per tile)
 };
-static_assert(sizeof(SurfaceDesc) == 24);
+
+// kameo-nx: XDK 2.0.2135's surface (the creator sub_820C9088): a resource head, a texture fetch constant at +16 (its
+// word 2 the size, width - 1 | (height - 1) << 13, word 1 the format in its low 6 bits), the EDRAM size at +40,
+// RB_SURFACE_INFO at +48, RB_COLOR_INFO / RB_DEPTH_INFO at +52, the HiZ control at +56.
+inline bool ReadSurfaceDesc(const u8 *surface, SurfaceDesc &out) {
+  if (!surface)
+    return false;
+  auto word = [surface](u32 offset) -> u32 { return *reinterpret_cast<const be_u32 *>(surface + offset); };
+  const u32 size = word(24);
+  out.SurfaceInfo = word(48);
+  out.ColorInfo = word(52);
+  out.HiControl = word(56);
+  out.Size = ((size >> 13) & 0x1FFF) << 3 | (size & 0x1FFF) << 18;
+  out.Format = word(20) & 0x3F;
+  out.EdramSize = word(40);
+  return true;
+}
 
 inline u32 SurfaceWidth(u32 size) {
   return ((size >> 18) & 0x3FFF) + 1;

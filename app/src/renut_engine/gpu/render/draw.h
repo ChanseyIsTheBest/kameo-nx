@@ -232,21 +232,23 @@ constexpr u32 FieldOfOffset(u32 at) {
     return 0;  // the float constants: by group (m_Pending)
   if (at < 0x2880)
     return kFieldBools;
-  if (at < 0x28C0)
+  // kameo-nx: XDK 2.0.2135 keeps the private words 0x2880-0x2CBF between the constants and the packets (the packets are
+  // N&B's + 0x440).
+  if (at < 0x2CC0)
+    return kFieldUnread;
+  if (at < 0x2D00)
     return kFieldDest;
-  if (at < 0x2968)
+  if (at < 0x2DA8)
     return kFieldViewPackets;
-  if (at >= 0x29C0 && at < 0x29C4)
+  if (at >= 0x2E00 && at < 0x2E04)
     return kField29C0;
-  if (at < 0x2A80)
+  if (at < 0x2EB0)
     return kFieldMisc;
   // Title update 3's CDevice (banjo-nx 2026-10-29): 4 bytes more from 0x2AC0 and 8 from 0x2E30 (the base's 0x2E2C),
   // the same from 0x3390 (d3d.h); the base's boundaries in the comments of DrawField moved with their fields.
-  if (at < 0x2DF8)  // katamari-nx: 0x2E04->0x2DF8
-    return kFieldUnread;
   if (at >= d3d::kDeviceOffsetVertexDeclaration && at < d3d::kDeviceOffsetVertexDeclaration + 4)
     return kFieldDecl;
-  if (at < 0x2EF8)  // katamari-nx: 0x2F08->0x2EF8
+  if (at < 0x2F7C)
     return kFieldPrivate;
   if (at < d3d::kDeviceOffsetIndexBuffer)
     return kFieldTail;
@@ -258,15 +260,17 @@ constexpr u32 FieldOfOffset(u32 at) {
     return kFieldStreams;
   if (at < d3d::kDeviceOffsetTextures + 4 * d3d::kTextureFetchSlots)
     return kFieldTexWords;
-  if (at < 0x317C)  // katamari-nx: 0x318C->0x317C
+  if (at < d3d::kDeviceOffsetScissorRect)
     return kFieldTail;
-  if (at < d3d::kDeviceOffsetPixelShader)
+  if (at < d3d::kDeviceOffsetScissorRect + 16)
     return kFieldScissor;
-  if (at < d3d::kDeviceOffsetVertexShader + 4)
+  if (at >= d3d::kDeviceOffsetVertexShader && at < d3d::kDeviceOffsetVertexShader + 4)
     return kFieldShaders;
-  if (at < d3d::kDeviceOffsetPredication)
-    return kFieldTail;
-  return kFieldPredication;
+  if (at >= d3d::kDeviceOffsetPixelShader && at < d3d::kDeviceOffsetPixelShader + 4)
+    return kFieldShaders;
+  if (at >= d3d::kDeviceOffsetPredication && at < d3d::kDeviceOffsetPredication + 4)
+    return kFieldPredication;
+  return kFieldTail;
 }
 // The fields of a run of device bytes.
 constexpr u32 FieldsOfRange(u32 at, u32 size) {

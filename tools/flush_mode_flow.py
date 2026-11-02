@@ -275,6 +275,8 @@ def addresses_in_image(path, wanted):
         sys.exit('ERROR (post-codegen patch): flush_mode_flow: the image dump is not a PE image')
     sections, opt_size = struct.unpack_from('<H', image, pe + 6)[0], struct.unpack_from('<H', image, pe + 20)[0]
     base = struct.unpack_from('<I', image, pe + 24 + 28)[0]
+    if base < 0x80000000:  # kameo-nx: Kameo's PE header says 0x400000; its XEX loads at 0x82000000
+        base = 0x82000000
     found = {(base + struct.unpack_from('<I', image, pe + 24 + 16)[0]) & 0xFFFFFFFF} & wanted
     table = pe + 24 + opt_size
     for i in range(sections):

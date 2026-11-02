@@ -123,6 +123,11 @@ void PrefetchShaderRecordLocked(u32 shader_va, RecordKind kind);
 void PrefetchShaderRecordAt(u32 shader_va);
 void PrefetchShaderBehind(u32 shader_va);
 
+// kameo-nx: the record of a declaration id (d3d/hooks/kameo_d3d.cpp), null for none.
+VertexDeclarationRecord *KameoDeclarationById(u32 id);
+// kameo-nx: the host side of a shader object the game's own Create*Shader made from this container.
+void RegisterGameShader(u32 shader_va, const u8 *container, bool pixel);
+
 // Drops the host side of an in-place guest shader object, if it has one.
 // Requires State().mutex.
 void ReleaseGuestShaderLocked(u32 shader_va);

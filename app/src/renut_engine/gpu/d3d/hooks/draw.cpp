@@ -607,30 +607,30 @@ void D3DDevice_SetPixelShader_hook(u32 device, u32 shader) {
 
 } // namespace
 
-BANJO_RENUT_HOOK(sub_824D9D08, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices  // katamari-nx: N&B sub_821FB880, signature 0.90 (next 0.77)
-BANJO_RENUT_HOOK(sub_824DA0F0, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices  // katamari-nx: N&B sub_8263F358, signature 0.87 (next 0.78)
-BANJO_RENUT_HOOK(sub_824DA9C0, D3DDevice_DrawIndexedTessellatedVertices_hook);  // D3DDevice_DrawIndexedTessellatedVertices  // katamari-nx: N&B sub_821FF958, signature 0.86 (next 0.65)
-BANJO_RENUT_HOOK(sub_824D9758, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP  // katamari-nx: N&B sub_821FD698, D3DDevice_DrawVerticesUP: BeginVertices-style reserve, reads VerticesRingEnd +13428 (N&B +13444) and the flags +10940; sig 0.69/0.55
-BANJO_RENUT_UNHOOKED_HOOK(sub_8263F2B8, D3DDevice_DrawIndexedVerticesUP_hook);  // D3DDevice_DrawIndexedVerticesUP  // katamari-nx: not hooked (D3DDevice_DrawIndexedVerticesUP: no counterpart found (sig 0.32))
-BANJO_RENUT_HOOK(sub_824D92B8, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices  // katamari-nx: N&B sub_821FBD30, signature 0.87 (next 0.70)
-BANJO_RENUT_HOOK(sub_824F3248, D3DDevice_ClearF_hook);  // D3DDevice_ClearF  // katamari-nx: N&B sub_8224F110, D3DDevice_ClearF: sig 0.71/0.40; reads the targets +12432.. and tiling surfaces +12720.. as N&B +12448 / +12736
-BANJO_RENUT_HOOK(sub_824F3370, D3DDevice_Clear_hook);  // D3DDevice_Clear  // katamari-nx: N&B sub_8224F238, signature 0.84 (next 0.36)
-BANJO_RENUT_HOOK(sub_824F12B8, D3DDevice_Resolve_hook);  // D3DDevice_Resolve  // katamari-nx: N&B sub_821FC7A0, signature 0.78 (next 0.33)
-BANJO_RENUT_UNHOOKED_HOOK_SHARED(sub_82246798, D3DDevice_BeginTiling_hook);  // D3DDevice_BeginTiling: N&B's update form, see below
-BANJO_RENUT_UNHOOKED_HOOK(sub_821E17C0, D3DDevice_EndTiling_hook);  // D3DDevice_EndTiling: N&B's update form, see below
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D9D08, D3DDevice_DrawVertices_hook);  // D3DDevice_DrawVertices  // katamari-nx: N&B sub_821FB880, signature 0.90 (next 0.77)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DA0F0, D3DDevice_DrawIndexedVertices_hook);  // D3DDevice_DrawIndexedVertices  // katamari-nx: N&B sub_8263F358, signature 0.87 (next 0.78)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824DA9C0, D3DDevice_DrawIndexedTessellatedVertices_hook);  // D3DDevice_DrawIndexedTessellatedVertices  // katamari-nx: N&B sub_821FF958, signature 0.86 (next 0.65)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D9758, D3DDevice_DrawVerticesUP_hook);  // D3DDevice_DrawVerticesUP  // katamari-nx: N&B sub_821FD698, D3DDevice_DrawVerticesUP: BeginVertices-style reserve, reads VerticesRingEnd +13428 (N&B +13444) and the flags +10940; sig 0.69/0.55
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_8263F2B8, D3DDevice_DrawIndexedVerticesUP_hook);  // D3DDevice_DrawIndexedVerticesUP  // katamari-nx: not hooked (D3DDevice_DrawIndexedVerticesUP: no counterpart found (sig 0.32))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D92B8, D3DDevice_BeginVertices_hook);  // D3DDevice_BeginVertices  // katamari-nx: N&B sub_821FBD30, signature 0.87 (next 0.70)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824F3248, D3DDevice_ClearF_hook);  // D3DDevice_ClearF  // katamari-nx: N&B sub_8224F110, D3DDevice_ClearF: sig 0.71/0.40; reads the targets +12432.. and tiling surfaces +12720.. as N&B +12448 / +12736
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824F3370, D3DDevice_Clear_hook);  // D3DDevice_Clear  // katamari-nx: N&B sub_8224F238, signature 0.84 (next 0.36)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824F12B8, D3DDevice_Resolve_hook);  // D3DDevice_Resolve  // katamari-nx: N&B sub_821FC7A0, signature 0.78 (next 0.33)
+BANJO_RENUT_UNHOOKED_HOOK_SHARED(unlinked_82246798, D3DDevice_BeginTiling_hook);  // D3DDevice_BeginTiling: N&B's update form, see below
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_821E17C0, D3DDevice_EndTiling_hook);  // D3DDevice_EndTiling: N&B's update form, see below
 // katamari-nx (2026-10-30): XDK 2.0.5632's BeginTiling (sub_824EFBC8: it stores the count at TileCount +0x31C4 and
 // the targets at TilingSurfaces +0x31B0, where the zones put N&B's fields; the game calls it at 0x8271E62C) and
 // EndTiling (sub_824F0150: sig 0.66/0.36, resolves through Resolve sub_824F12B8; called at 0x8272F2E0..0x8272F384),
 // with their full arguments read from the registers (the float argument takes r8's place: ClearStencil is r9).
-BANJO_RENUT_HOOK_RAW(sub_824EFBC8) {
+BANJO_RENUT_UNHOOKED_HOOK_RAW(unlinked_824EFBC8) {
   BeginTilingImpl(ctx.r3.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r4.u32, float(ctx.f1.f64), ctx.r9.u32);
 }
-BANJO_RENUT_HOOK_RAW(sub_824F0150) {
+BANJO_RENUT_UNHOOKED_HOOK_RAW(unlinked_824F0150) {
   ctx.r3.u64 = EndTilingImpl(ctx.r3.u32, true, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, float(ctx.f1.f64),
                              ctx.r9.u32, ctx.r10.u32);
 }
-BANJO_RENUT_UNHOOKED_HOOK_SHARED(sub_82237FE8, D3DDevice_BeginExport_hook);  // D3DDevice_BeginExport  // katamari-nx: not hooked (D3DDevice_BeginExport: XDK 2.0.5632 has no memexport functions (as feedingfrenzy2-nx found for 6534))
-BANJO_RENUT_UNHOOKED_HOOK_SHARED(sub_82237D80, D3DDevice_EndExport_hook);  // D3DDevice_EndExport  // katamari-nx: not hooked (D3DDevice_EndExport: as above)
-BANJO_RENUT_HOOK(sub_824E9428, D3DDevice_Present_hook);  // D3DDevice_Present  // katamari-nx: N&B sub_826352B8, D3DDevice_Present: SynchronizeToPresentationInterval sub_824E89E8, Resolve sub_824F12B8, KickOff sub_824E0298, then Swap sub_824E8E90; sig 0.43/0.26
-BANJO_RENUT_HOOK(sub_824D4930, D3DDevice_SetVertexShader_hook);  // D3DDevice_SetVertexShader  // katamari-nx: N&B sub_821F90D8, signature 0.87 (next 0.75)
-BANJO_RENUT_HOOK(sub_824D4630, D3DDevice_SetPixelShader_hook);  // D3DDevice_SetPixelShader  // katamari-nx: N&B sub_821F58A8, signature 0.85 (next 0.73)
+BANJO_RENUT_UNHOOKED_HOOK_SHARED(unlinked_82237FE8, D3DDevice_BeginExport_hook);  // D3DDevice_BeginExport  // katamari-nx: not hooked (D3DDevice_BeginExport: XDK 2.0.5632 has no memexport functions (as feedingfrenzy2-nx found for 6534))
+BANJO_RENUT_UNHOOKED_HOOK_SHARED(unlinked_82237D80, D3DDevice_EndExport_hook);  // D3DDevice_EndExport  // katamari-nx: not hooked (D3DDevice_EndExport: as above)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824E9428, D3DDevice_Present_hook);  // D3DDevice_Present  // katamari-nx: N&B sub_826352B8, D3DDevice_Present: SynchronizeToPresentationInterval sub_824E89E8, Resolve sub_824F12B8, KickOff sub_824E0298, then Swap sub_824E8E90; sig 0.43/0.26
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D4930, D3DDevice_SetVertexShader_hook);  // D3DDevice_SetVertexShader  // katamari-nx: N&B sub_821F90D8, signature 0.87 (next 0.75)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D4630, D3DDevice_SetPixelShader_hook);  // D3DDevice_SetPixelShader  // katamari-nx: N&B sub_821F58A8, signature 0.85 (next 0.73)

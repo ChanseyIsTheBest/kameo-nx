@@ -32,6 +32,12 @@ def find_shader_headers(data, aligned=True):
         if (aligned and o % 4) or o + 0x24 > len(data):
             continue
         virt, phys = struct.unpack_from(">II", data, o + 4)
+        if data[o + 2] == 0x0E:  # kameo-nx: zuma-nx's container_0e.h IsContainer0E (the 0x18-byte header)
+            defs, consts, info = struct.unpack_from(">III", data, o + 12)
+            if 0x18 <= virt < 0x10000 and 0 < phys < 0x100000 and o + virt + phys <= len(data) and defs < virt \
+                    and consts < virt and 0x18 <= info < virt:
+                hdrs.append(o)
+            continue
         ct, dt, so = struct.unpack_from(">III", data, o + 0x10)
         if not (0x24 <= virt < 0x10000 and 0 < phys < 0x100000 and o + virt <= len(data)):
             continue

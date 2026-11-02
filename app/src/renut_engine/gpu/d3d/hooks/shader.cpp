@@ -459,7 +459,7 @@ u32 CreateShaderRecord(const be_u32 *function, bool pixel) {
     return 0;
   const auto *container = reinterpret_cast<const uint8_t *>(function);
   const auto *header = reinterpret_cast<const d3d::ShaderContainer *>(container);
-  if ((u32(header->flags) & 0xFFFFFF00u) != 0x102A1100u) {
+  if ((u32(header->flags) & 0xFFFFFF00u) != 0x102A1100u && (u32(header->flags) & 0xFFFFFF00u) != 0x102A0E00u) {
     RGPU_ERROR("Create{}Shader: not a shader container (flags {:08X})", pixel ? "Pixel" : "Vertex",
                u32(header->flags));
     return 0;
@@ -496,7 +496,7 @@ void RegisterGuestShader(u32 shader_va, u32 physical_va, bool pixel) {
   const u32 flags = header->flags;
   const u32 virtual_size = header->virtualSize;
   const u32 physical_size = header->physicalSize;
-  if ((flags & 0xFFFFFF00u) != 0x102A1100u || ((flags & 1) != 0) == pixel ||
+  if (((flags & 0xFFFFFF00u) != 0x102A1100u && (flags & 0xFFFFFF00u) != 0x102A0E00u) || ((flags & 1) != 0) == pixel ||
       virtual_size < sizeof(d3d::ShaderContainer) || virtual_size > 0x10000 ||
       physical_size == 0 || physical_size > 0x100000) {
     RGPU_ERROR("XGRegister{}Shader {:08X}: no shader container at {:08X} (flags {:08X})",
@@ -526,6 +526,35 @@ void RegisterGuestShader(u32 shader_va, u32 physical_va, bool pixel) {
     if (shader) {  // banjo-nx (2026-10-23, batch 6): the old one's host shader kept
       std::lock_guard shader_lock(shader->host_mutex);
       ReleaseHostShader(shader.get());  // banjo-nx (2026-10-28)
+    }
+    shader = std::make_unique<ShaderRecord>();
+    shader->kind = kind;
+    shader->self_va = shader_va;
+    shader->hash = hash;
+    shader->entry = FindShaderEntry(hash);
+    PipelineShaderLoaded(shader->entry);
+  });
+}
+
+// kameo-nx: the game's own Create*Shader made the object; this is its host side, keyed by the object's address, from the
+// container it was given (XXH3 of the virtual part and the physical part: what the shader cache is keyed by).
+void RegisterGameShaderImpl(u32 shader_va, const u8 *container, bool pixel) {
+  const uint64_t hash = HashShaderContainer(container);
+  const RecordKind kind = pixel ? RecordKind::PixelShader : RecordKind::VertexShader;
+  const ShaderCacheEntry *const sort_entry = FindShaderEntry(hash);
+  if (!sort_entry)
+    CaptureMissingShader(container, pixel, hash);
+  NoteShaderSortKey(shader_va, hash, ShaderSortableByHash(hash, sort_entry, pixel));
+  render_thread::Queue([shader_va, hash, kind] {
+    auto &shader = g_guest_shaders[shader_va];
+    if (shader && shader->hash == hash && shader->kind == kind) {
+      ForgetShader(shader_va);
+      return;
+    }
+    ForgetShader(shader_va);
+    if (shader) {
+      std::lock_guard shader_lock(shader->host_mutex);
+      ReleaseHostShader(shader.get());
     }
     shader = std::make_unique<ShaderRecord>();
     shader->kind = kind;
@@ -658,9 +687,15 @@ void D3DVertexShader_Bind_hook(u32 shader_va, u32 declaration_va, mapped_u32 str
 
 } // namespace
 
-BANJO_RENUT_HOOK(sub_824D6120, D3DDevice_CreateVertexShader_hook);  // D3DDevice_CreateVertexShader  // katamari-nx: N&B sub_826377C0, signature 0.85 (next 0.55)
-BANJO_RENUT_HOOK(sub_824D6010, D3DDevice_CreatePixelShader_hook);  // D3DDevice_CreatePixelShader  // katamari-nx: N&B sub_826375D8, D3DDevice_CreatePixelShader: CreateVertexShader takes sub_824D6120 (0.85); this one's next best, 0.66
-BANJO_RENUT_HOOK(sub_824D4C50, D3DDevice_CreateVertexDeclaration_hook);  // D3DDevice_CreateVertexDeclaration  // katamari-nx: N&B sub_826379A0, signature 0.77 (next 0.47)
-BANJO_RENUT_UNHOOKED_HOOK(sub_8263FBD0, D3DVertexShader_Bind_hook);  // D3DVertexShader_Bind  // katamari-nx: not hooked (D3DVertexShader_Bind: no clear counterpart (sig 0.35/0.28))
-BANJO_RENUT_HOOK(sub_824D4838, XGRegisterVertexShader_hook);  // XGRegisterVertexShader  // katamari-nx: N&B sub_826376C8, signature 0.91 (next 0.32)
-BANJO_RENUT_UNHOOKED_HOOK(sub_826375A0, XGRegisterPixelShader_hook);  // XGRegisterPixelShader  // katamari-nx: not hooked (XGRegisterPixelShader: no counterpart (sig 0.26))
+namespace renut::gpu {
+void RegisterGameShader(u32 shader_va, const u8 *container, bool pixel) {
+  RegisterGameShaderImpl(shader_va, container, pixel);
+}
+}  // namespace renut::gpu
+
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D6120, D3DDevice_CreateVertexShader_hook);  // D3DDevice_CreateVertexShader  // katamari-nx: N&B sub_826377C0, signature 0.85 (next 0.55)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D6010, D3DDevice_CreatePixelShader_hook);  // D3DDevice_CreatePixelShader  // katamari-nx: N&B sub_826375D8, D3DDevice_CreatePixelShader: CreateVertexShader takes sub_824D6120 (0.85); this one's next best, 0.66
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D4C50, D3DDevice_CreateVertexDeclaration_hook);  // D3DDevice_CreateVertexDeclaration  // katamari-nx: N&B sub_826379A0, signature 0.77 (next 0.47)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_8263FBD0, D3DVertexShader_Bind_hook);  // D3DVertexShader_Bind  // katamari-nx: not hooked (D3DVertexShader_Bind: no clear counterpart (sig 0.35/0.28))
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_824D4838, XGRegisterVertexShader_hook);  // XGRegisterVertexShader  // katamari-nx: N&B sub_826376C8, signature 0.91 (next 0.32)
+BANJO_RENUT_UNHOOKED_HOOK(unlinked_826375A0, XGRegisterPixelShader_hook);  // XGRegisterPixelShader  // katamari-nx: not hooked (XGRegisterPixelShader: no counterpart (sig 0.26))

@@ -245,7 +245,8 @@ constexpr u32 kDeltaUnreadEnd = kDeltaVertexF - 0x300;  // 0x480: the fetch cons
 // chunk before the one holding the vertex declaration). SA2: 11008-12224.
 // katamari-nx: a 64-byte chunk boundary, not a field: 11776 is still the last boundary before Beautiful Katamari's
 // vertex declaration (+11812), and the words between are private ones the render thread does not read.
-constexpr u32 kDeltaPrivateUnreadBegin = 10880, kDeltaPrivateUnreadEnd = 11776;
+// kameo-nx: XDK 2.0.2135's private words between the constants and the packets, 0x2880-0x2CBF.
+constexpr u32 kDeltaPrivateUnreadBegin = 0x2880, kDeltaPrivateUnreadEnd = 0x2CC0;
 constexpr bool DeltaChunkRead(u32 i) {
   const u32 at = DeltaChunkOffset(i);
   return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at + 64 <= kDeltaPrivateUnreadEnd));
@@ -268,7 +269,7 @@ constexpr DeltaChunkList MakeDeltaChunkList(bool narrow) {
 }
 constexpr DeltaChunkList kDeltaAllChunks = MakeDeltaChunkList(false);
 constexpr DeltaChunkList kDeltaReadChunks = MakeDeltaChunkList(true);
-static_assert(kDeltaReadChunks.count == 39);  // N&B (SA2 40)
+static_assert(kDeltaReadChunks.count == 12 + 28);  // kameo-nx: the fetch constants' 12 and the tail's (0x2780-0x287F, 0x2CC0-0x329F)
 // Whether device byte 'at' is one the render thread reads (the verify mode compares those).
 constexpr bool DeltaByteRead(u32 at) {
   return !(at < kDeltaUnreadEnd || (at >= kDeltaPrivateUnreadBegin && at < kDeltaPrivateUnreadEnd));

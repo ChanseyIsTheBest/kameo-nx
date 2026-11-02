@@ -1426,7 +1426,7 @@ void PlanResources(ResourcePlan &p, const u8 *device, uint64_t plain_dirty, OpKi
       u32 *key = stream_keys[s];
       key[0] = word(constants);
       key[1] = word(constants + 4);
-      key[2] = word(d3d::kDeviceOffsetStreamSources + s * 4);
+      key[2] = word(d3d::StreamSourceOffset(s));
       key[3] = u32(device[d3d::kDeviceOffsetStreamStrides + s]) | s << 8;
       key[4] = vb_words[s][0];
       key[5] = vb_words[s][1];

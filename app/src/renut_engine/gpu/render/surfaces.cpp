@@ -651,9 +651,11 @@ HostSurface *GetHostSurfaceLocked(u32 surface_va) {
   // Targets made before the first Swap are of the configured scale too.
   if (!g_resolution_latched)
     LatchResolutionScaleLocked();
-  const auto *desc = GuestPtr<const d3d::SurfaceDesc>(surface_va + sizeof(d3d::Resource));
-  if (!desc)
+  // kameo-nx: from the game's own surface (XDK 2.0.2135's layout).
+  d3d::SurfaceDesc desc_value;
+  if (!d3d::ReadSurfaceDesc(GuestPtr<const u8>(surface_va), desc_value))
     return nullptr;
+  const d3d::SurfaceDesc *const desc = &desc_value;
 
   const bool memo = banjo::renut_gpu::CpuMemosOn();
   SurfaceMemo &m = g_surface_memo[(surface_va * 0x9E3779B1u) >> 26];

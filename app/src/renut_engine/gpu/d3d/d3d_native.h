@@ -263,50 +263,52 @@ inline i64 TruncateToI64(double value) {
 
 // Device fields used by more than one part of the runtime.
 namespace off {
-constexpr u32 Ring = 0x30;                 // m_pRing
-constexpr u32 RingLimit = 0x34;            // m_pRingLimit
-constexpr u32 RingGuarantee = 0x38;        // m_pRingGuarantee
+// kameo-nx: XDK 2.0.2135: the write pointer, its segment's hard end, and that less 160, which the game's inline writers test.
+constexpr u32 Ring = 0x0;                  // m_pRing
+constexpr u32 RingLimit = 0x4;             // m_pRingHardEnd
+constexpr u32 RingGuarantee = 0x8;         // m_pRingLimit
 constexpr u32 PredicatedPending2 = 0x28;   // m_Predicated_PendingMask2
-constexpr u32 SetRenderStateCall = 0x40;   // [101]
-constexpr u32 SetSamplerStateCall = 0x1D4; // [20]
-constexpr u32 GetRenderStateCall = 0x224;  // [101]
+constexpr u32 SetRenderStateCall = 0x60;   // [97] (kameo-nx: XDK 2.0.2135)
+constexpr u32 SetSamplerStateCall = 0x1E4; // [20]
+constexpr u32 GetRenderStateCall = 0x234;  // [97]
 constexpr u32 GetSamplerStateCall = 0x3B8; // [20]
 constexpr u32 TextureFetch = 0x480;        // m_Constants.TextureFetch[26], 24 bytes each
 constexpr u32 VertexFetch = 0x6F0;         // m_Constants.VertexFetch[18], 8 bytes each
-constexpr u32 SurfaceInfo = 0x2880;        // m_DestinationPacket
-constexpr u32 Color0Info = 0x2884;
-constexpr u32 DepthInfo = 0x2888;
-constexpr u32 WindowOffset = 0x28C0;       // m_WindowPacket
-constexpr u32 WindowScissorTL = 0x28C4;
-constexpr u32 WindowScissorBR = 0x28C8;
-constexpr u32 ColorMask = 0x28DC;          // m_ValuesPacket
-constexpr u32 DepthControl = 0x2934;       // m_ControlPacket
-constexpr u32 BlendControl0 = 0x2938;
-constexpr u32 ColorControl = 0x293C;
-constexpr u32 HiControl = 0x2940;
-constexpr u32 ClipControl = 0x2944;
-constexpr u32 ModeControl = 0x2948;
-constexpr u32 BlendControl1 = 0x2958;
-constexpr u32 BlendControl2 = 0x295C;
-constexpr u32 BlendControl3 = 0x2960;
-constexpr u32 FenceCompletion = 0x2A90;    // -> the completed-fence word
-constexpr u32 FenceTag = 0x2A9C;           // the current fence
-constexpr u32 CommandBufferTagMask = 0x2AA0;  // Common bits a recorded buffer tracks
-constexpr u32 TilePredication = 0x2AB4;    // SetPredication / SetCommandBufferPredication args
-constexpr u32 RunPredication = 0x2AB8;
-constexpr u32 Flags = 0x2ABC;              // bytes 0x2ABC-0x2ABF, see below
-constexpr u32 Flags1 = 0x2ABD;
-constexpr u32 Flags2 = 0x2ABE;
-constexpr u32 Flags3 = 0x2ABF;
+// kameo-nx: the packets are N&B's + 0x440 here, the private words before them.
+constexpr u32 SurfaceInfo = 0x2CC0;        // m_DestinationPacket
+constexpr u32 Color0Info = 0x2CC4;
+constexpr u32 DepthInfo = 0x2CC8;
+constexpr u32 WindowOffset = 0x2D00;       // m_WindowPacket
+constexpr u32 WindowScissorTL = 0x2D04;
+constexpr u32 WindowScissorBR = 0x2D08;
+constexpr u32 ColorMask = 0x2D1C;          // m_ValuesPacket
+constexpr u32 DepthControl = 0x2D74;       // m_ControlPacket
+constexpr u32 BlendControl0 = 0x2D78;
+constexpr u32 ColorControl = 0x2D7C;
+constexpr u32 HiControl = 0x2D80;
+constexpr u32 ClipControl = 0x2D84;
+constexpr u32 ModeControl = 0x2D88;
+constexpr u32 BlendControl1 = 0x2D98;
+constexpr u32 BlendControl2 = 0x2D9C;
+constexpr u32 BlendControl3 = 0x2DA0;
+constexpr u32 FenceCompletion = 0x2890;    // -> the completed-fence word
+constexpr u32 FenceTag = 0x289C;           // the current fence
+constexpr u32 CommandBufferTagMask = 0x28A0;  // Common bits a recorded buffer tracks (not used here)
+constexpr u32 TilePredication = 0x28B4;    // (not used here)
+constexpr u32 RunPredication = 0x28B8;     // (not used here)
+constexpr u32 Flags = 0x28C0;              // bytes 0x28C0-0x28C3, see below
+constexpr u32 Flags1 = 0x28C1;
+constexpr u32 Flags2 = 0x28C2;
+constexpr u32 Flags3 = 0x28C3;
 // TU3: the fields from 0x2E30 to 0x3390 are 8 bytes further on.
-constexpr u32 ScissorRect = 0x317C;        // SetScissorRect's RECT (katamari-nx: 0x318C->0x317C)
-constexpr u32 IndexBuffer = 0x308C;  // katamari-nx: 0x309C->0x308C
-constexpr u32 RenderTargets = 0x3090;      // [4] (katamari-nx: 0x30A0->0x3090)
-constexpr u32 DepthStencil = 0x30A0;  // katamari-nx: 0x30B0->0x30A0
-constexpr u32 StreamSources = 0x30A4;      // [16] (katamari-nx: 0x30B4->0x30A4)
-constexpr u32 StreamStrides = 0x30E8;      // u8[16], stride / 4 (katamari-nx: 0x30F8->0x30E8)
-constexpr u32 Textures = 0x30F8;           // [26] (katamari-nx: 0x3108->0x30F8)
-constexpr u32 Predication = 0x319C;        // tile predication of the next draws, ~0 none (katamari-nx: 0x31AC->0x319C)
+constexpr u32 ScissorRect = 0x3220;        // SetScissorRect's RECT
+constexpr u32 IndexBuffer = 0x30F4;
+constexpr u32 RenderTargets = 0x30F8;      // [4]
+constexpr u32 DepthStencil = 0x3108;
+constexpr u32 StreamSources = 0x310C;      // [16] of {offset, buffer}
+constexpr u32 StreamStrides = 0x3190;      // u8[16], stride / 4
+constexpr u32 Textures = 0x31A0;           // [26]
+constexpr u32 Predication = d3d::kKameoPredication;  // always ~0: no tiling in this game
 constexpr u32 RunPredicationState = 0x31A0;  // katamari-nx: 0x31B0->0x31A0
 constexpr u32 PredicationSet = 0x31A4;     // 1 while SetPredication's mask is non-zero (katamari-nx: 0x31B4->0x31A4)
 constexpr u32 TilingSurfaces = 0x31B0;     // the 4 targets and depth BeginTiling bound (katamari-nx: 0x31C0->0x31B0)
@@ -314,11 +316,11 @@ constexpr u32 TileCount = 0x31C4;  // katamari-nx: 0x31D4->0x31C4
 constexpr u32 TileRects = 0x31C8;          // D3DRECT[TileCount] (katamari-nx: 0x31D8->0x31C8)
 constexpr u32 TileOrigins = 0x32B8;        // per tile, x & ~31, y & ~31 (katamari-nx: 0x32C8->0x32B8)
 constexpr u32 TilingExtent = 0x3374;       // widest and tallest tile edge (katamari-nx: 0x3384->0x3374)
-constexpr u32 CommandBuffer = 0x34B4;      // the D3DCommandBuffer being recorded (katamari-nx: 0x34CC->0x34B4)
+constexpr u32 CommandBuffer = d3d::kDeviceOffsetCommandBuffer;  // kameo-nx: none recorded, a word that stays 0
 constexpr u32 SideBuffer = 0x4140;  // katamari-nx: 0x4158->0x4140
-constexpr u32 AutoDepthStencil = 0x39D0;   // InitializePresentationParameters' surfaces (katamari-nx: 0x39E8->0x39D0)
-constexpr u32 AutoFrontBuffer = 0x39D4;  // katamari-nx: 0x39EC->0x39D4
-constexpr u32 AutoBackBuffer = 0x39D8;  // katamari-nx: 0x39F0->0x39D8
+constexpr u32 AutoDepthStencil = 0x3684;   // kameo-nx: before the two D3DDevice_Present sub_820D1ED0 reads
+constexpr u32 AutoFrontBuffer = 0x3688;
+constexpr u32 AutoBackBuffer = 0x368C;
 }  // namespace off
 
 // Flags (0x2ABC) bits: 0x01 the draws that follow run in each tile's pass,

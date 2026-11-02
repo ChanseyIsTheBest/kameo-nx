@@ -2,10 +2,10 @@
 # (docs/porting-start-here.md of banjo-nx: "Build and test essentials"). Started minimised; refuses to start while any
 # Ryujinx runs or when the free commit memory is under -MinCommitGB; stops only the process it started.
 #   powershell -File tools/run_ryujinx.ps1 -Seconds 300 -Name emu1 [-Toml <a kameo.toml with test keys>]
-param([int]$Seconds = 240, [string]$Name = "emu", [string]$Toml = "", [double]$MinCommitGB = 12)
+param([int]$Seconds = 240, [string]$Name = "emu", [string]$Toml = "", [double]$MinCommitGB = 8)
 $root = Split-Path -Parent $PSScriptRoot
 $ryu = "D:\New folder\Ryubing-src\ryubing\build\Ryujinx.exe"
-$data = "D:\New folder\ryu-data\katamari"
+$data = "D:\New folder\ryu-data\kameo"
 $sd = Join-Path $data "sdcard\switch\kameo-nx"
 $nro = Join-Path $sd "kameo-nx.nro"
 $out = Join-Path $root "out\emu_runs\$Name"
@@ -30,8 +30,18 @@ while ((Get-Date) -lt $deadline -and -not $p.HasExited) { Start-Sleep -Seconds 3
 if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; Write-Output "stopped pid $($p.Id) after $Seconds s" }
 else { Write-Output "Ryujinx exited by itself (code $($p.ExitCode))" }
 Start-Sleep -Seconds 2
+# pacman-nx: a second run under one name would otherwise nest its logs in logs\logs and leave the first run's to be read.
+if (Test-Path (Join-Path $out "logs")) { Remove-Item -Recurse -Force (Join-Path $out "logs") }
 if (Test-Path $logs) { Copy-Item -Recurse $logs (Join-Path $out "logs") -Force }
+# pacman-nx: the sampling profile, which each run overwrites (tools/switch_hot_bulk.py takes it with this run's ELF).
+$switchDir = Split-Path -Parent $sd
+foreach ($f in "rex_profile.log", "banjo_profiler.log") {
+    $from = Join-Path $switchDir $f
+    if ((Test-Path $from) -and (Get-Item $from).LastWriteTime -ge $started) { Copy-Item $from $out -Force }
+}
+Set-Content -Path (Join-Path $out "run.nro.txt") -Value ("{0} {1}" -f (Get-Item $nro).Length, (Get-FileHash $nro -Algorithm MD5).Hash)
 # This run's captures move out of the SD (the SD's folder no longer grows); older ones there are left alone.
-Get-ChildItem $sd -Filter "*.png" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $started } |
+# pacman-nx: only the captures folder: this game's DLC installs PNGs under renut/ at the first start, which -Recurse took too.
+Get-ChildItem (Join-Path $sd "capturas") -Filter "*.png" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $started } |
     Move-Item -Destination $out -Force
 Get-ChildItem $out -Recurse | Select-Object FullName, Length
