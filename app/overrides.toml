@@ -1,0 +1,4 @@
+# kameo-nx: function boundaries found by the analysis tools (tools/pointer_fixpoint.py, tools/gap_sweep.py,
+# tools/runtime_gap_resolver.py) and jump tables (tools/switch_check.py), each with its evidence.
+
+[functions]

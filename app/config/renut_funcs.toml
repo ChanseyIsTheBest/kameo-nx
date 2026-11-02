@@ -1,0 +1,20 @@
+# kameo-nx: named functions and function boundaries of Kameo, title update 2 (docs/kameo-notes.md, "Code generation").
+[functions]
+
+# From Kameo: RePowered's config/tu/functions.toml (MaxDeadBear, BiRabittoh; MIT): function starts the analyzer misses in
+# the patched image. Each checked against this tree's image (docs/kameo-notes.md).
+"0x82324118" = { }
+"0x8251F320" = { }
+"0x823516E8" = { }
+"0x823517C8" = { }
+"0x82154B90" = { }
+"0x82526D80" = { }
+"0x824434E0" = { }
+"0x82491768" = { }
+"0x82363378" = { }
+"0x82413180" = { }
+"0x8233B048" = { }
+"0x826F4600" = { }
+"0x8233F948" = { }
+"0x820CF010" = { }
+"0x82706C70" = { }
