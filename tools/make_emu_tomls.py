@@ -12,13 +12,12 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, 'dist', 'switch', 'kameo-nx')
 OUT = os.path.join(ROOT, 'out', 'emu')
-# kameo-nx: the PC's script, on a clock of the game's own input polls (input_script_polls: emu2 lost its START in a 46 s host
-# stall and every later press landed one screen off): START at the title; Solo; Normal; "Start without saving" (DOWN, A) and
-# its caution (A); then through the opening scene. 15 s between the menu's steps: chain1-3 lost a press to the book's opening
-# animation under load, the DOWN fell on Normal/Expert, and the next A took New Quest, whose keyboard dialog waits for ever
-# (not in the captures: the book stays blank).
-PAD = ('input_script = "45:START@0.5,65:A@0.5,80:A@0.5,95:DOWN@0.5,105:A@0.5,120:A@0.5,130:A@0.5,140:A@0.5,150:A@0.5,160:A@0.5,'
-       '170:A@0.5,180:A@0.5,190:A@0.5,200:A@0.5,210:A@0.5"\ninput_script_polls = 60\ninput_script_sticks = 320\n')
+# kameo-nx: A presses alone, so no timing can send them down the wrong page: A takes the title, Solo, Normal, New Quest and
+# the opening scene. New Quest's keyboard dialog would wait for ever (it is not in the captures: the book stays blank);
+# `headless` answers prompts with their defaults. On a clock of the game's own input polls (input_script_polls: emu2 lost a
+# press in a 46 s host stall). A DOWN to "Start without saving" kept landing on the wrong page (chain1-3, emu7).
+PAD = ('input_script = "' + ','.join(f'{t}:A@0.5' for t in range(40, 300, 10)) + '"\n'
+       'input_script_polls = 60\ninput_script_sticks = 320\nheadless = true\n')
 NO_PAD = 'input_script = ""\ninput_script_sticks = 0\n'
 # Unbuffered: a run is stopped by force, which drops a buffered log's tail (emu4prof's last 3 minutes).
 PAD += 'log_file_writer = false\n'

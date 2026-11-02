@@ -25,6 +25,20 @@ UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam.exe')
 NO_UAM = False
 
 
+def inline_descriptor_temporaries(path):
+    """--force-temporary splits `sampler _179 = g_SamplerDescriptorHeap[_173];` onto its own line, and deko3d_glsl.convert wants
+    the table inside the constructor. These are single-assignment temporaries of single-assignment indices, so putting each
+    expression back where its temporary is used is exact."""
+    text = open(path, encoding='utf-8').read()
+    declaration = re.compile(r'^[ \t]*(?:sampler|texture\w*)[ \t]+(_\d+)[ \t]*=[ \t]*(g_\w+\[[^\]]*\]);[ \t]*\r?\n', re.M)
+    temporaries = dict(declaration.findall(text))
+    text = declaration.sub('', text)
+    if temporaries:
+        text = re.sub(r'\b_\d+\b', lambda m: temporaries.get(m.group(0), m.group(0)), text)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+
+
 def one(spv, out):
     stem = os.path.splitext(os.path.basename(spv))[0]
     stage = 'frag' if stem.startswith('ps_') else 'vert'
@@ -35,10 +49,13 @@ def one(spv, out):
     r = subprocess.run(command, capture_output=True, text=True)
     # kameo-nx (2026-11-03): SPIRV-Cross's own bug on two Power Pack pixel shaders (ps_31E80B337E6737C3, ps_D8285199D6D8B325):
     # its emitter does not converge. Forcing temporaries only changes how the GLSL is written, and only for these.
-    if r.returncode != 0 and 'Maximum compilation loops' in (r.stderr or r.stdout):
+    forced = r.returncode != 0 and 'Maximum compilation loops' in (r.stderr or r.stdout)
+    if forced:
         r = subprocess.run(command + ['--force-temporary'], capture_output=True, text=True)
     if r.returncode != 0:
         return stem, 'spirv-cross', (r.stderr or r.stdout).strip()[:300], 0, []
+    if forced:
+        inline_descriptor_temporaries(vk)
     try:
         text, _ = deko3d_glsl.convert(open(vk, encoding='utf-8').read(), stage, deko3d_glsl.DEFAULT_UBO_MAP, 'handle')
     except deko3d_glsl.Unsupported as e:
