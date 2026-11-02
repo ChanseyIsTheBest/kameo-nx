@@ -52,6 +52,8 @@ SHIPPED = {
     # Kameo's level geometry: the PC's cache reached 234.5 MB in Thorn's Castle; at the base's 128 MB, emu4prof counted
     # "index cache full 14367" and the draws fell back to range copies converted every frame (under 2 fps). Exact either way.
     'banjo_renut_stream_cache_mb': '256',
+    # Off in banjo-nx because N&B draws on two devices; Kameo has one (queued.cpp's key).
+    'banjo_renut_deferred_chain': 'true',
 }
 PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders': 'false',
         'banjo_renut_diag_terrain': 'false'}

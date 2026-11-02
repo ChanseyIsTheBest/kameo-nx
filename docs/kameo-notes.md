@@ -140,6 +140,8 @@ Reference: the SDK's emulated GPU (`--banjo_renderer=emulated --gpu_plugin=xenos
 
 **Ruled out: auto-exposure from a CPU read of the 32x32 target.** A theory for the sky, since 32x32 resolves alternate between pages `1F850` and `1F851`. `_depthEffects_LuminanceHistogram` (`sub_8228AF70`) does zero 256 bins at `0x828E24F0` and lock a texture, but the bins it then scans are filled from a fixed table at `0x827B71xx`, not from pixels, so Renut not writing resolves back cannot change it.
 
+**Draws the game writes itself (`kameo_ring_census`, off by default).** Our hooks replace the draw functions and stub the ring, so a draw packet written inline goes nowhere. RePowered names such writers. The census parses the ring sink: `census1` counted 1.5 million draw packets, which looked alarming, but they are `C0003600 00010081`: one auto-indexed point, again and again, with register writes between. The writers: `sub_820C63F8`, called by `sub_820CA9E8`, which writes device `+0x28A4` from the VS and PS register counts and looks like `D3DDevice_SetShaderGPRAllocation`; it loads immediate shaders and draws these points, by its shape a pipe drain and not picture. `sub_820C6A50` builds a rectangle (`00030088`). I first guessed these points were the flame's particles: wrong. The census now sorts by initiator; anything else is logged as a real candidate. `census3` (title, menus, movie, the level's opening with the attack buttons pressed): 996,744 draw packets, **all D3D's single points, 0 rectangles, 0 others**. So no draw of the game's is lost in that path. `drawTube` (the water cannon) is the known one, and it needs that weapon on screen: untested.
+
 The reference fakes occlusion query results too (`query_occlusion_fake_sample_count`, as our hook's 1000), so RePowered's real occlusion counts for light glows fix no difference from the reference. They go in the report as a decision.
 
 ## Ryujinx runs
@@ -157,6 +159,25 @@ The reference fakes occlusion query results too (`query_occlusion_fake_sample_co
 `emu4prof` (00:03, 540 s, no verify keys, sampling profiler): fps 57-60 at the menus; then 0.6-1.6 fps as gameplay starts, render thread at 91 % of its core and 1,139 ms a frame. Its samples: `FlushVertexFillsLocked` → `ConvertVertices` / `ExpandElement<2>` and `memmove`, reached from `QueueKickFlush`. Its counters: **cache 128.0 MB (the limit), "stream cache full 448, index cache full 14367"**, and 889.9 MB through the upload ring in one 10 s window. The PC's cache reached 234.5 MB in the same level, so the base's 128 MB is too small for it. `banjo_renut_stream_cache_mb` goes to 256 (a size, no effect on the picture); `emu5prof` shows why: the cache peaks at 223.5 MB during the level's load and settles at 42-48 MB in play, with no "cache full" line at all. The log stopping 3 minutes before the end was not a hang: the profiler file carries on to the end; this config buffers its log and the run is stopped by force, which most likely dropped the tail. Test tomls now write it unbuffered.
 
 `emu5prof` (00:16, 600 s, no verify keys, sampling profiler; both fixes in): **the cause is proven**: `[kameo] surface 42E72820 changed since a draw bound it: bound as 128x128, its header now reads 1379x2964`, and more of the same (`7905x5968`, `1x1`) up to the 16-line cap. Those are the temporary 128x128 surfaces. No garbage target in the run. Render targets 21 and 169 MB against 39 and 768 MB; GPU region peak 963 MB against 1,830 MB. Gameplay holds 12-19 fps in the emulator with the render thread at 48-77 ms a frame (86.5 % of its core), a game thread at 85.5 %, the main thread at 37 %, XMA 12.9 % and the audio worker 11.9 %. 77-78 % of draws from whole buffers; the rest are the "kind" reason. These are emulator figures, proxies for the A57. Still to explain: 169 MB of targets against the PC's 52 MB.
+
+## Machine copies (2026-11-03)
+
+From `emu5prof`'s samples (ARM, the emulator), `tools/switch_hot_bulk.py --min-samples 2 --merge`: 247 functions in `localized_bulk.txt`.
+
+| Run | Copies reached | Calls compared | Differences |
+|---|---|---|---|
+| `verify1` | 39 of 243 | 91.8 million | 0. Few reached because I ran `localize_native.py` alone: callers stayed direct (`__imp__sub_X`), and only `direct_calls.py` in `post_codegen.py` sends them through the hooks. Always run the whole of `post_codegen.py` after changing a list |
+| `verify2` | 184 of 247 | 115.2 million (19.3 million not comparable) | 0, and 3 calls that differed once and not when repeated |
+
+63 copies were not reached on the PC in that path, so they are not verified yet. No hand-written natives: none without a console profile.
+
+**Where the drawing thread's `memcpy` goes** (`emu6prof`, callers of leaf samples): `CaptureDelta` 54.6 %, the whole `Capture` 29.7 %, a copy of `sub_8232CFF0` 11.2 %. Each 10 s report: 43,756 draws at 418 bytes each, and 9,401 `Begin*Vertices` draws as whole copies of 12,960 bytes, about 122 MB. `banjo_renut_deferred_chain` puts those in the delta chain. It is off in the base because N&B draws on two devices from two threads (emulator hangs in 4 of 8 runs). Kameo has one device in every run. On the PC, `chain4`: **36.3 million draws checked through gameplay, 0 differ**, and 0 whole copies for those draws. On by default here. The key is read once at start, so it has no in-run A/B target; on and off can only be compared across runs. Its hang history means it needs repeated emulator runs: see "Ryujinx runs".
+
+`emu6prof` (01:07, the copies on, 223 of 247 reached in the emulator, NRO 46 to 51 MB, about 20 KB a copy): gameplay 13-16 fps with the render thread at 64-70 ms, against 12-19 fps and 48-77 ms without them. No gain can be claimed from this: the difference is inside the noise of a shared machine and a JIT, and the console decides.
+
+## DLC (2026-11-03)
+
+All four packs install through the base's installer on both builds (Kameo Add-On Pack, Design-A-Skin Pack, Power Pack, Winter Warrior pack; hard links, so nothing is copied and the originals stay as they came). Their unpacked files hold 73 CAFF archives (65 `.mdl`, 8 `.lvl`). `tools/kameo_files.py` over the installed folder: 1,668 distinct shader containers, **1,245 of them new**, so the set goes from 4,616 to 5,861. Without them DLC content would have missing shaders. SPIRV-Cross failed on 2 of the new ones (`ps_31E80B337E6737C3`, `ps_D8285199D6D8B325`, both the Power Pack's `008B5284_42.mdl`: "Maximum compilation loops"); `tools/deko3d_shaders.py` now retries such a shader with `--force-temporary`, which only changes how the GLSL is written. RePowered's other DLC hooks (`sub_820B0878` the sign-in remount, `sub_820B1268` the licence mask for version-0 packs) are not taken yet: neither pack problem has shown here, and a DLC skin has not yet been selected in a run.
 
 ## Enhancements audit (2026-11-02)
 

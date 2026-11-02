@@ -66,6 +66,10 @@ namespace banjo::renderdoc {
 void GameFrame();  // me/banjo_renderdoc.cpp
 }
 
+REXCVAR_DEFINE_BOOL(kameo_ring_census, false, "Banjo/Diagnostics",
+                    "Count the draw packets the game's own inline writers leave in the ring sink, which this renderer "
+                    "does not read (RingCensus): the \"[kameo] ring census\" log lines");
+
 // banjo-nx (2026-10-20, from sa2-nx's sa2_renut_core_layout): see D3DDevice_Swap_hook.
 REXCVAR_DEFINE_BOOL(banjo_renut_core_layout, false, "Banjo/Enhancements",
                     "Renut's renderer on the Switch: at the first Swap the guest main thread (N&B's drawing thread, the "
@@ -140,6 +144,7 @@ constexpr u32 kE_OUTOFMEMORY = 0x8007000Eu;
 u32 g_ring_sink = 0;
 u32 g_ring_data = 0;
 std::atomic<u32> g_ring_data_offset{0};
+u32 g_ring_census_pos = 0;  // kameo-nx: RingCensus
 
 // Device blocks of released devices, for the next Direct3D_CreateDevice (the
 // records heap never frees physical blocks). N&B creates and releases a pair
@@ -908,6 +913,7 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   // 172 and 173 took the fence tag, so every pixel with that green came out at 0 (magenta contours, renut10).
   auto *device = GuestPtr<u8>(device_va);
   if (device) {
+    native::RingCensus(native::DeviceAt(device_va));  // kameo-nx: a diagnostic, off by default
     device[d3d::kDeviceOffsetSwapFlags] &= u8(~d3d::kSwapFlagPending);
     // banjo-nx (package 27c): the frame's last vertex and texture fills are read here, before the Swap's fence
     // completes. They were read at the present, after it: the game, told the frame was done, could rewrite a dynamic
@@ -1218,6 +1224,68 @@ void D3D_CDevice_Uninitialize_hook(u32 device) {
 
 namespace renut::gpu::native {
 
+// kameo-nx (2026-11-03): the draws the game's own inline packet writers leave in the ring sink (RePowered names
+// xfix_sky_renderStars, Draw_Bink_textures, IconPlayerDrawBars, _FluidPoints_coreQuadRender and drawTube): nothing reads the
+// sink, so each one counted here is a draw this renderer does not make. A census, off by default.
+void RingCensus(Device device) {
+  static const bool on = REXCVAR_GET(kameo_ring_census);
+  if (!on || !device || !g_ring_sink)
+    return;
+  const u32 write = device.W(off::Ring);
+  if (g_ring_census_pos < g_ring_sink || g_ring_census_pos > write + 4)
+    g_ring_census_pos = g_ring_sink;
+  static uint64_t draws = 0, dwords = 0, logged = 0, points = 0, rectangles = 0;
+  u32 pos = g_ring_census_pos;
+  while (pos <= write) {
+    const auto *p = GuestPtr<const be_u32>(pos);
+    if (!p)
+      break;
+    const u32 word = p[0];
+    u32 skip = 0;
+    switch (word >> 30) {
+      case 0:
+        skip = ((word >> 16) & 0x3FFF) + 1;
+        break;
+      case 1:
+        skip = 2;
+        break;
+      case 2:
+        break;
+      default: {
+        skip = ((word >> 16) & 0x3FFF) + 1;
+        const u32 opcode = (word >> 8) & 0x7F;
+        if (opcode == 0x22 || opcode == 0x36) {  // DRAW_INDX, DRAW_INDX_2
+          ++draws;
+          // The initiator is the first word for DRAW_INDX_2, the second for DRAW_INDX. The single points (00010081) and
+          // the rectangle (00030088) are D3D's own: sub_820C63F8's pipe drain for SetShaderGPRAllocation (sub_820CA9E8)
+          // and sub_820C6A50's. Any other is worth a line: a draw of the game's this renderer does not make.
+          const u32 initiator = opcode == 0x36 ? u32(p[1]) : u32(p[2]);
+          if (initiator == 0x00010081)
+            ++points;
+          else if (initiator == 0x00030088)
+            ++rectangles;
+          else if (logged < 64) {
+            ++logged;
+            RGPU_WARN("[kameo] ring census: draw packet {:08X} {:08X} {:08X} {:08X} at {:08X}: prim {} source {} indices {}, "
+                      "not made", word, u32(p[1]), u32(p[2]), u32(p[3]), pos, initiator & 0x3F, (initiator >> 6) & 3,
+                      initiator >> 16);
+          }
+        }
+        break;
+      }
+    }
+    dwords += skip + 1;
+    pos += (skip + 1) * 4;
+  }
+  g_ring_census_pos = pos;
+  static uint64_t last_report = 0;
+  if (dwords - last_report > (1u << 20)) {
+    last_report = dwords;
+    RGPU_INFO("[kameo] ring census: {} draw packets in {} dwords so far: {} D3D's single points, {} D3D's rectangles, "
+              "{} others", draws, dwords, points, rectangles, draws - points - rectangles);
+  }
+}
+
 void RewindRing(Device device) {
   if (!device)
     return;
@@ -1225,6 +1293,8 @@ void RewindRing(Device device) {
     g_ring_sink = records::AllocPhysicalBlock(kRingSinkSize);
   if (!g_ring_sink)
     return;
+  RingCensus(device);
+  g_ring_census_pos = g_ring_sink;
   // kameo-nx: as StartNewSegment lays a segment out (RePowered's KickOff hook): the writers pre-increment.
   device.SetW(off::Ring, g_ring_sink - 4);
   device.SetW(off::RingLimit, g_ring_sink + kRingSinkSize - 52);

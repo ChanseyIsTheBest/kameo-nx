@@ -332,6 +332,7 @@ constexpr u8 kFlags1ImmediateFences = 0x02;
 
 // Ring stub and fences (hooks/device.cpp).
 void RewindRing(Device device);
+void RingCensus(Device device);  // kameo-nx: a diagnostic (kameo_ring_census)
 // CDevice::KickOff: ends the device's batch of work (and its fence).
 u32 KickOff(u32 device_va);
 // CDevice::BlockOnFence(Fence, Type, NoKick=FALSE).

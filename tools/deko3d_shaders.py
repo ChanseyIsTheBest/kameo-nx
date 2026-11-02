@@ -31,8 +31,12 @@ def one(spv, out):
     vk = os.path.join(out, 'vk', stem + '.vk.glsl')
     glsl = os.path.join(out, 'glsl', stem + '.glsl')
     dksh = os.path.join(out, 'dksh', stem + '.dksh')
-    r = subprocess.run([SPIRV_CROSS, spv, '--version', '460', '--vulkan-semantics', '--relax-nan-checks',
-                        '--output', vk], capture_output=True, text=True)
+    command = [SPIRV_CROSS, spv, '--version', '460', '--vulkan-semantics', '--relax-nan-checks', '--output', vk]
+    r = subprocess.run(command, capture_output=True, text=True)
+    # kameo-nx (2026-11-03): SPIRV-Cross's own bug on two Power Pack pixel shaders (ps_31E80B337E6737C3, ps_D8285199D6D8B325):
+    # its emitter does not converge. Forcing temporaries only changes how the GLSL is written, and only for these.
+    if r.returncode != 0 and 'Maximum compilation loops' in (r.stderr or r.stdout):
+        r = subprocess.run(command + ['--force-temporary'], capture_output=True, text=True)
     if r.returncode != 0:
         return stem, 'spirv-cross', (r.stderr or r.stdout).strip()[:300], 0, []
     try:

@@ -560,6 +560,7 @@ banjo_renut_diag_terrain = true
 renut_shadow_resolution = "1x"
 renut_ambient_occlusion = "Half"
 banjo_xma_frame_cache = false
+banjo_renut_deferred_chain = true
 banjo_renut_fast_draw_verify = true
 banjo_renut_resource_objects_verify = true
 banjo_renut_fetch_cache_verify = true

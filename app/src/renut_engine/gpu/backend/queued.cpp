@@ -63,13 +63,13 @@ REXCVAR_DEFINE_BOOL(banjo_renut_snapshot_deltas_verify, false, "Banjo/Enhancemen
                     "snapshots\" line)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // banjo-nx (2026-10-20, from futari-nx's futari_renut_deferred_chain): see QueueDeferredDraw.
-REXCVAR_DEFINE_BOOL(banjo_renut_deferred_chain, false, "Banjo/Enhancements",
+REXCVAR_DEFINE_BOOL(banjo_renut_deferred_chain, true, "Banjo/Enhancements",
                     "Renut's renderer (banjo_renut_snapshot_deltas): a Begin*Vertices draw joins the delta chain too "
                     "instead of a whole device copy (made under the chain's lock and queued under it by the next hook's "
-                    "FlushDeferredVertices, before any other draw of the device). OFF by default since package 36q: the "
-                    "chain is one for every device, and N&B draws on two (from two threads): a draw of the other device "
-                    "made and queued between a Begin*Vertices delta and its queueing puts that delta on the wrong device "
-                    "(emulator hangs in 4 of 8 runs with it on, 0 before). Off: a whole copy, as sa2-nx has it")
+                    "FlushDeferredVertices, before any other draw of the device). banjo-nx keeps it off: the chain is one "
+                    "for every device, and N&B draws on two (from two threads), which hung its emulator in 4 of 8 runs. "
+                    "kameo-nx: on: Kameo has one device, and 9,401 such draws per 10 s made whole copies of 12,960 bytes "
+                    "(chain4: 36.3 million draws checked, 0 differ). Off: a whole copy, as sa2-nx has it")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 namespace renut::gpu {
