@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
-"""pacman-nx: the emulator's test tomls in out/emu, made from the package's tomls (tools/make_pacman_tomls.py) so they keep
+"""pacman-nx, kameo-nx: the emulator's test tomls in out/emu, made from the package's tomls (tools/make_kameo_tomls.py) so they keep
 its settings. Each adds the scripted pad, captures every 15 s and what the test needs:
   emu_verify.toml   configs/renut_verify.toml: every verify key on, the pad to gameplay
   emu_attract.toml  the same with no pad input: the game's title and attract loop
   emu_profile.toml  renut_play.toml: no diagnostics, the pad to gameplay, the sampling profiler on
   emu_ab.toml       renut_ab.toml: the in-run A/B, the pad to gameplay
-  emu_tour.toml     configs/renut_verify.toml: tools/tour_script.txt (menus, courses, skins, a game to its end)
   python tools/make_emu_tomls.py
 """
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIST = os.path.join(ROOT, 'dist', 'switch', 'pacman-nx')
+DIST = os.path.join(ROOT, 'dist', 'switch', 'kameo-nx')
 OUT = os.path.join(ROOT, 'out', 'emu')
-PAD = 'input_script = "45:START,55:A,65:A,75:A,85:A,95:A,105:A"\ninput_script_sticks = 115\n'
+# kameo-nx: START at the title; Normal; "Start without saving" (DOWN, A) and its caution (A); then Play and through the
+# opening scene. Held 1.5 s: at the emulator's frame rate a poll can miss a shorter press.
+PAD = ('input_script = "60:START@1.5,80:A@1.5,95:A@1.5,110:DOWN@1.5,120:A@1.5,135:A@1.5,150:A@1.5,165:A@1.5,180:A@1.5,'
+       '195:A@1.5,210:A@1.5,225:A@1.5,240:A@1.5,255:A@1.5,270:A@1.5,285:A@1.5"\ninput_script_sticks = 400\n')
 NO_PAD = 'input_script = ""\ninput_script_sticks = 0\n'
 CAPTURES = 'nfsmw_captura_cada_s = 15\nnfsmw_captura_max = 60\n'
-TOUR = 'input_script = "' + open(os.path.join(ROOT, 'tools', 'tour_script.txt'), encoding='utf-8').read().strip() + \
-       '"\ninput_script_sticks = 227\n'
 TESTS = {
     'emu_verify.toml': (os.path.join('configs', 'renut_verify.toml'), PAD + CAPTURES),
     'emu_attract.toml': (os.path.join('configs', 'renut_verify.toml'), NO_PAD + CAPTURES),
-    'emu_tour.toml': (os.path.join('configs', 'renut_verify.toml'), TOUR + CAPTURES),
     'emu_profile.toml': ('renut_play.toml', PAD + 'switch_profile_stacks = true\n'),
     'emu_ab.toml': ('renut_ab.toml', PAD),
 }

@@ -9,3 +9,6 @@ All times AEST, 2026-11-02 / 03.
 - 20:25 First PC build started (emulated GPU, Renut compiled out).
 - 21:27 The PC build: emulated GPU reaches the title (first stop: C000008F, an FP exception on a host thread; RePowered's guard).
 - 21:43 Renut on Vulkan draws the title: the game's device at XDK 2.0.2135's layout, 4,616 shaders from the executable and the CAFF archives.
+- 22:17 Renut on Vulkan reaches Thorn's Castle gameplay, stable for 300 s (index endian, vertex fetch, resolve homes).
+- 22:34 Switch shaders: 4,616 compiled by uam, 0 failed. Package 4.9 MB. Ryujinx data folder made from katamari's system files.
+- 22:36 Kameo's settings, package script, README and notices done; title update code built in. First Switch build started.

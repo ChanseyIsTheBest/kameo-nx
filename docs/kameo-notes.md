@@ -82,3 +82,62 @@ The base's Renut is a native re-implementation of N&B's D3D: hooks on ~320 funct
 - the ring is stubbed as RePowered stubs it (`KickOff`, `RingBufferDeviceAllocate`, `BlockOnPrimaryRange`), and the GPU waits are answered by the render thread.
 
 This keeps every part of our renderer that matters here (the record path, fast draw path, pipelines by content, pushed constants, whole-buffer copies, store cards, deko3d back end). What it does not use are the setter natives and setter marks: they were how N&B's recorded buffers avoid comparing state, and this game records none.
+
+## What the PC run needed (2026-11-02)
+
+Each stopped or broke a run; each has its own commit.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Exit `C000008F` on a host thread | a guest thread's MXCSR has the exception masks clear; a vector computation faults on the host | `app/src/kameo_fp_guard.cpp`, RePowered's `fp_guard` (MIT, credited) |
+| "Draw dropped: declaration" | the declaration pointer is the game's, Renut wants its own id | content-hashed registry on the game thread, `KameoDeclarationById` at both lookup sites |
+| All shaders "missing" | almost all are in the CAFF archives, not the executable | `tools/kameo_files.py`: 147 hits in the image plus 4,477 distinct in 81 archives, 4,616 in all |
+| Shards in the 3D menus | index endian read from Common bits, which this XDK does not use for it | the endian comes from the index width (16-bit: 1, 32-bit: 2) |
+| Vertex data wrong | the game builds vertex fetch constants only in its own flush (`sub_820D5EA8`) | the draw hooks build them: `w0 = GpuAddress(vb+12 + offset)`, `w1 = ((vb+16 - offset) & ~0x30000000) | 0x10000000`, at `VertexFetch[17-n]` |
+| Video memory exhausted, crash (3,367 resolve targets, 11.8 GB) | the game makes a temporary header per resolve, so a target was made per header; keying by page alone was not enough, because depth and colour alternate on one page | `g_resolve_homes` keyed by `desc[1] << 32 | desc[2]`: 32 targets, 58 MB |
+| "New Quest" appears to hang in tests | it opens `XamShowKeyboardUI`, an ImGui dialog that the captures do not show | tests take "Start without saving" (DOWN, A, confirm A) |
+| Reference run stuck at Play while the machine was busy | the scripted press held 0.2 s, and at a low frame rate no poll fell inside it | the script's `A@1.5` holds; only needed for emulated-GPU runs |
+
+## Census: what the game decides (porting-guide-renderer.md section 2)
+
+PC, Thorn's Castle, run `renut8`, ~40 fps, 10 s logs. Figures for the console come later.
+
+| Item | Kameo | Consequence |
+|---|---|---|
+| Where draws come from | 100 % immediate, no command buffers; ~186,000 draws/s (~4,640 a frame) | the record-time items (A/B 45-50) have nothing to act on |
+| Where resources come from | the game's own headers, with temporary headers per resolve | resolve homes by content (above); objects at bind time |
+| How state is set | the game's own inlined setters (D3D9LTCG), on its real device | no setter marks or natives: the device is compared at the draw |
+| Memexport | to be measured in the emulator's Switch run | |
+| Shadow passes | 235,946 depth-only draws per 10 s (~590 a frame); map sizes to be measured | |
+| Threads | to be measured in `rex_profile.log` | |
+| Where shaders live | 147 in the executable, 4,477 in 81 CAFF archives; containers version 0x0E | the Switch cache carries all 4,616; 0 failed in uam |
+| Tiling | no RePowered mentions; fields exist at `0x28C0` bit `0x10` and `0x32A8..`; to be confirmed | |
+
+`fast draws` 0 % and `whole buffers` 0 on the PC are expected: `FastDrawLocked` returns at `!IsDeko3D()`. They are read on the Switch build.
+
+## Visual differences against the reference (from 2026-11-02 22:40)
+
+Reference: the SDK's emulated GPU (`--banjo_renderer=emulated --gpu_plugin=xenos`), run `out/pc_runs/emu_gpu7`. Ours: Renut on Vulkan, runs `out/pc_runs/renut8` and later. Captures stay in `out/` (game imagery is never committed). Idle view of Thorn's Castle: reference `captura_015_0226s.png`, ours `captura_012_0180s.png`.
+
+| # | Difference | Cause found | State |
+|---|---|---|---|
+| 1 | Our picture is darker in the midtones everywhere (menus and gameplay) | the display's gamma ramp: `SetGammaRamp` (`sub_820C48B8`) stores the converted ramp at device `+0x36EC`; our Swap still read N&B's offset, and `banjo_renut_game_gamma` was off. RePowered records the same difference (`kameo_gfx_gamma`: median 30 against the reference's 55) | fix ready, our own key, no graft |
+| 2 | The sky through the castle window is blown out to white with a wide halo; in the reference it is a muted orange | to be measured with `renut_post_process_precision = "Game"`: the PC default keeps bloom buffers at 16 bits, the console's are 8 | testing |
+| 3 | Thin chains above the player in ours, not visible in the reference | not looked at yet | open |
+
+The reference fakes occlusion query results too (`query_occlusion_fake_sample_count`, as our hook's 1000), so RePowered's real occlusion counts for light glows fix no difference from the reference. They go in the report as a decision.
+
+## Enhancements audit (2026-11-02)
+
+`tools/enhancement_gap.py` and `tools/enhancement_state.py` against banjo-nx's `enhancements-reference.md`: 260 keys there, 245 defined here; of the 139 rows of "Every key", 135 ship as the reference does.
+
+| Key | State | Why |
+|---|---|---|
+| `banjo_native_reverb` | off here, on in the reference | N&B's addresses; needs Kameo's XAudio functions. Only worth finding if a profile shows the audio thread high |
+| `banjo_cpu_native_xaudio_src_m03` | absent | the same |
+| `banjo_cpu_native_memcpy`, `_memset`, `_constants_*`, `_flush_*` | absent | N&B's hand natives; this port's hot lists fill from its own profiles |
+| `banjo_renut_check_worker` | absent | removed from banjo-nx itself in package 28b (`banjo_renut_checks.h`); the reference is stale |
+| `banjo_gpu_fetch_spec` | absent | tessellated draws only; 0 tessellated draws in Thorn's Castle (`tessellation: 0 grid vertices`). Worth porting if a later level shows any |
+| `banjo_renut_replay_lookahead`, `_shadow_sort`, `_texture_slot_skip`, `_inline_line_compare` | off | SLOWER ON THE CONSOLE, section 6b |
+
+Picture-changing keys set off for this port (N&B's choices, pixel-identical by default): `banjo_renut_smaa`, `banjo_renut_fur_shells_percent` 100, `banjo_renut_portrait_fur_shells_percent` 100, `banjo_renut_portrait_msaa_samples` 0.

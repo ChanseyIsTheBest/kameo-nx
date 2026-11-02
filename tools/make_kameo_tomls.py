@@ -42,6 +42,13 @@ SHIPPED = {
     # Off on Katamari's console measurement (exact either way: the same samples).
     'banjo_xma_frame_cache': 'false',
     'banjo_shader_misses': '"sdmc:/switch/kameo-nx/shader_misses"',
+    # Pixel-identical by default (the request): N&B's choices that change the picture stay off. Each is a config below.
+    'banjo_renut_smaa': 'false',
+    'banjo_renut_fur_shells_percent': '100',
+    'banjo_renut_portrait_fur_shells_percent': '100',
+    'banjo_renut_portrait_msaa_samples': '0',
+    # The display's gamma ramp the game loads: without it the picture is darker than the reference (docs/kameo-notes.md).
+    'banjo_renut_game_gamma': 'true',
 }
 PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders': 'false',
         'banjo_renut_diag_terrain': 'false'}
@@ -71,6 +78,8 @@ CONFIGS = {
                                   'must count 0 differences)'),
     'renut_pgo.toml': (PGO, 'the shipped settings with only the crash logs (the PGO build\'s renut.toml)'),
     'renut_profile.toml': (PROFILE, 'the shipped settings with the console profile on (rex_profile.log)'),
+    'renut_smaa.toml': ({'banjo_renut_smaa': 'true'}, 'SMAA on the final composite (not pixel-identical; it needs the '
+                                                      'composite\'s pixel shader hash, banjo_renut_smaa_shaders)'),
     'renut_720_docked.toml': ({'banjo_renut_render_height_docked': '720'},
                               '720 lines docked too, the Xbox 360\'s own (pixel-identical)'),
     'renut_648_864.toml': ({'banjo_renut_render_height_handheld': '648', 'banjo_renut_render_height_docked': '864'},
