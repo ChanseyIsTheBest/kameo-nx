@@ -2,3 +2,67 @@
 # tools/runtime_gap_resolver.py) and jump tables (tools/switch_check.py), each with its evidence.
 
 [functions]
+
+# Code pointers into unclaimed gaps, stored in data (vtables, callback tables) or built in code (lis/addi:
+# callbacks passed at run time), accepted by tools/pointer_fixpoint.py pass 1: the scratch listing fits
+# in the gap (or continues only into a registered function it branches to: "then the registered tail"),
+# ends in a terminator and reads no register that is undefined at a function entry. The comment says
+# where the pointer is stored ("pointer at") or built ("built at", inside the code range).
+"0x820EB440" = { }  # 15 in the gap, then the registered tail sub_820EB47C, pointer at 0x827A8070
+"0x820FD9C8" = { }  # 4 instructions, built at 0x820FD5FC (+1 more)
+"0x82324DD8" = { }  # 6 in the gap, then the registered tail sub_82324DF0, pointer at 0x82755C14 (+2 more)
+"0x8233BC68" = { }  # 2 instructions, pointer at 0x8207E118 (+7 more)
+"0x8233F938" = { }  # 2 instructions, pointer at 0x8207E1D0
+"0x8233F940" = { }  # 2 instructions, pointer at 0x8207E1D8
+"0x8233F950" = { }  # 2 instructions, pointer at 0x8207E1E0
+"0x8233F958" = { }  # 2 instructions, pointer at 0x8207E1E4
+"0x82344C50" = { }  # 2 instructions, pointer at 0x8207E434 (+1 more)
+"0x82344C58" = { }  # 2 instructions, pointer at 0x8207E438 (+1 more)
+"0x82344C60" = { }  # 2 instructions, pointer at 0x8207E440
+"0x82344C98" = { }  # 2 instructions, pointer at 0x8207E460
+"0x82344CB0" = { }  # 2 instructions, pointer at 0x8207E470
+"0x82344CC0" = { }  # 2 instructions, pointer at 0x8207E478
+"0x82344CD0" = { }  # 2 instructions, pointer at 0x8207E480
+"0x82345190" = { }  # 2 instructions, pointer at 0x8207E3B8 (+1 more)
+"0x82345C18" = { }  # 2 instructions, pointer at 0x8207E53C
+"0x82345C20" = { }  # 2 instructions, pointer at 0x8207E550
+"0x8235D840" = { }  # 5 instructions, pointer at 0x8207E85C (+2 more)
+"0x8248EC60" = { }  # 17 in the gap, then the registered tail sub_8248ECA4, sub_8248ECB4, pointer at 0x8274B974
+"0x825BEC88" = { }  # 4 instructions, pointer at 0x82009FD0 (+2 more)
+"0x825BEFC8" = { }  # 10 instructions, pointer at 0x8200A194 (+2 more)
+"0x825BEFF0" = { }  # 10 instructions, pointer at 0x8200A198 (+2 more)
+"0x825BF018" = { }  # 10 instructions, pointer at 0x8200A19C (+2 more)
+"0x825BF040" = { }  # 10 instructions, pointer at 0x8200A1A0 (+2 more)
+"0x825BF470" = { }  # 8 instructions, pointer at 0x8200A1D4 (+1 more)
+"0x825BF490" = { }  # 4 instructions, built at 0x825C8BBC
+"0x825BF4A0" = { }  # 4 instructions, built at 0x825C86F4
+"0x825BF4B0" = { }  # 4 instructions, built at 0x825C8744
+"0x825BF4C0" = { }  # 4 instructions, built at 0x825C8794 (+1 more)
+"0x825BF4D0" = { }  # 4 instructions, built at 0x825C88BC
+"0x825BF4E0" = { }  # 4 instructions, built at 0x825C8C0C
+"0x825BF4F0" = { }  # 4 instructions, built at 0x825C899C
+"0x825BF500" = { }  # 4 instructions, built at 0x825C8C5C
+"0x825BF510" = { }  # 4 instructions, built at 0x825C89EC
+"0x825BF520" = { }  # 4 instructions, built at 0x825C8CAC
+"0x82612260" = { }  # 28 in the gap, then the registered tail sub_826122D0, pointer at 0x820212CC (+2 more)
+"0x826A6D70" = { }  # 6 in the gap, then the registered tail sub_826A6D88, pointer at 0x8202B554
+
+# Complete functions in unclaimed gaps without a pointer the pointer sweep sees (tools/gap_sweep.py pass 1): the scratch listing fits in the gap (or continues only into a registered tail it branches
+# to), ends in a terminator, reads no register that is undefined at a function entry. First case:
+# 0x82689770, the first PC boot's "Call to invalid or unregistered function".
+"0x820B7CD4" = { }  # 1 instructions, gap sweep
+"0x8213E4A8" = { }  # 1 instructions, gap sweep
+"0x821D6574" = { }  # 1 instructions, gap sweep
+"0x8225FDDC" = { }  # 1 instructions, gap sweep
+"0x822602D0" = { }  # 1 instructions, gap sweep
+"0x82290988" = { }  # 1 instructions, gap sweep
+"0x822A9B6C" = { }  # 1 instructions, gap sweep
+"0x822C8B38" = { }  # 1 instructions, gap sweep
+"0x82304F38" = { }  # 1 instructions, gap sweep
+"0x8233802C" = { }  # 1 instructions, gap sweep
+"0x8236F02C" = { }  # 1 instructions, gap sweep
+"0x824FBB54" = { }  # 1 instructions, gap sweep
+"0x825E6BEC" = { }  # 1 instructions, gap sweep
+"0x82637468" = { }  # 1 instructions, gap sweep
+"0x826374A0" = { }  # 1 instructions, gap sweep
+"0x8263E014" = { }  # 1 instructions, gap sweep

@@ -4,7 +4,9 @@
 # From Kameo: RePowered's config/tu/functions.toml (MaxDeadBear, BiRabittoh; MIT): function starts the analyzer misses in
 # the patched image. Each checked against this tree's image (docs/kameo-notes.md).
 "0x82324118" = { }
-"0x8251F320" = { }
+# NOT 0x8251F320, on RePowered's list as "indirect-call target (present in vanilla; missed in the patched image)": it is the
+# base game's entry point; in the patched image the word before it runs into it, nothing references it and
+# tools/read_before_write.py reports it reads six registers it never set. A label in the middle of a function.
 "0x823516E8" = { }
 "0x823517C8" = { }
 "0x82154B90" = { }
