@@ -78,6 +78,8 @@ set(RENUT_SOURCES
     src/kameo_fp_guard.cpp
     # katamari-nx (2026-10-31): DLC packages in the "dlc" folder next to the NRO installed at start (reNut upstream's).
     src/renut_engine/dlc_install.cpp
+    # kameo-nx: the code is title update 2's: its update folder and the check that default.xexp is there.
+    src/renut_engine/title_update.cpp
 	src/renut_engine/FPS.cpp
     # CPU/GPU profiler ported from UnleashedRecomp-NX (see src/profiler/profiler.h).
     src/profiler/profiler.cpp

@@ -18,6 +18,7 @@
 // katamari-nx: N&B's title update is not part of this port (Beautiful Katamari has no title update in the user's
 // files). The DLC installer is (2026-10-31, the user's 16 DLC packages): reNut upstream's, game-agnostic.
 #include "renut_engine/dlc_install.h"
+#include "renut_engine/title_update.h"
 #include "profiler/profiler.h"
 #include "profiler/profiler_overlay.h"
 #include "me/me_native_system.h"
@@ -76,7 +77,7 @@ public:
     // kameo.toml, which holds only the player's options (a key added there still overrides these: test runs).
     std::string_view BuiltInConfig() const override {
 #if defined(KAMEO_BUILTIN_CONFIG)
-        return kPacmanBuiltInConfig;
+        return kKameoBuiltInConfig;
 #else
         return {};
 #endif
@@ -84,7 +85,7 @@ public:
     // Without a kameo.toml next to the NRO, the player's default one is written there.
     std::string_view DefaultConfigFile() const override {
 #if defined(KAMEO_BUILTIN_CONFIG)
-        return kPacmanPlayerConfig;
+        return kKameoPlayerConfig;
 #else
         return {};
 #endif
@@ -275,6 +276,7 @@ public:
                 paths.game_data_root = extracted;
             }
         }
+        banjo::title_update::ConfigurePaths(paths);
         renut::dlc::SetUserDataRoot(paths.user_data_root);  // the folder the DLC installer checks for installed ones
     }
 

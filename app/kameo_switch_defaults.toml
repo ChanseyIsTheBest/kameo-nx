@@ -1,7 +1,7 @@
-# Beautiful Katamari for the Switch: the fixed settings, compiled into the NRO (app/CMakeLists.txt, src/renut_app.h
-# BuiltInConfig) and applied before the SD card's katamari.toml, which holds the player's options
-# (app/katamari_switch.toml). Made from dist/switch/katamari-nx/configs/renut_pgo.toml (the settings the released PGO
-# profile was taken with): no log, no profilers, no diagnostics; rex_crash.log and rex_stderr.log stay.
+# Kameo: Elements of Power for the Switch: the fixed settings, compiled into the NRO (app/CMakeLists.txt, src/renut_app.h
+# BuiltInConfig) and applied before the SD card's kameo.toml, which holds the player's options (app/kameo_switch.toml).
+# From katamari-nx's list, without its natives' keys: no log, no profilers, no diagnostics; rex_crash.log and
+# rex_stderr.log stay.
 gpu_plugin = ""
 masseffect_renderer_native = false
 gpu_allow_invalid_fetch_constants = true
@@ -99,24 +99,6 @@ banjo_gpu_dead_raster = true
 banjo_gpu_rect_split = true
 banjo_gpu_proof_depth_only = true
 banjo_gpu_edram4_split_tiles = true
-banjo_cpu_native_sub_82376878 = true
-banjo_cpu_native_sub_823769E8 = true
-banjo_cpu_native_sub_82B6B258 = true
-banjo_cpu_native_sub_82373F70 = true
-banjo_cpu_native_sub_821F9BB8 = true
-banjo_cpu_native_sub_822DA610 = true
-banjo_cpu_native_sub_82377E88 = true
-banjo_cpu_native_sub_823828A8 = true
-banjo_cpu_native_sub_82376450 = true
-banjo_cpu_native_sub_8222A1D0 = true
-banjo_cpu_native_sub_82378BC0 = true
-banjo_cpu_native_sub_82229110 = true
-banjo_cpu_native_sub_82382780 = true
-banjo_cpu_native_xaudio_src_m03 = true
-banjo_cpu_native_sub_82A02D00 = true
-banjo_cpu_native_sub_822216C8 = true
-banjo_cpu_native_sub_82376768 = true
-banjo_cpu_native_sub_82229C90 = true
 banjo_renut_textures_reserve_mb = 384
 banjo_renut_stream_cache_mb = 128
 banjo_cpu_native_bulk = true
@@ -226,8 +208,4 @@ banjo_deko3d_provisional_count = true
 banjo_renut_diag_terrain = false
 renut_shadow_resolution = "1x"
 renut_ambient_occlusion = "Half"
-katamari_hand_matrix_copy = true
-katamari_hand_matrix_multiply = true
-katamari_hand_matrix_translation = true
-katamari_hand_sphere_box = false
 banjo_xma_frame_cache = false
