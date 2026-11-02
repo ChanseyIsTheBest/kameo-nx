@@ -911,6 +911,8 @@ const char *AbName(int target) {
   // katamari-nx (2026-10-30): Beautiful Katamari's CPU items (cpu/hot/banjo_hand_natives.h, cpu/banjo_hot_guest.h).
   case 69: return "(free: Katamari's hand-written matrix natives)";
   case 70: return "the localized copies of the hot functions (localized.txt; off half: the generated originals)";
+  // kameo-nx (2026-11-03): off half: each Begin*Vertices draw a whole copy of the device, as banjo-nx.
+  case 71: return "Begin*Vertices draws in the delta chain (banjo_renut_deferred_chain)";
   default: return "none";
   }
 }

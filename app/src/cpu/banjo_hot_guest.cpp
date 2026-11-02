@@ -50,12 +50,14 @@ extern "C" const bool g_banjo_store_cards = false;
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 
 #include <fmt/format.h>
 
 #include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/logging.h>
 
 #include "cpu/banjo_enhancements.h"
@@ -661,6 +663,16 @@ void Report() {
               "repeated, differences: {}",
               reached, on, direct, REXCVAR_GET(banjo_cpu_native_bulk) ? "on" : "off", bulk_reached, bulk_total, bulk_on,
               compared, not_comparable, not_repeated, differences);
+  // kameo-nx (2026-11-03): under the guard, which copies have no call compared yet (never reached, or every call not
+  // comparable): a copy goes on only once verified, and the count above does not say which. Overwritten at each report (a
+  // test run is stopped by force); tools/hot_verified.py takes them out of the bulk list.
+  if (REXCVAR_GET(banjo_hot_guard_calls) > 0) {
+    std::ofstream unverified(rex::filesystem::GetExecutableFolder() / "hot_unverified.txt", std::ios::trunc);
+    for (Hook* h = g_hooks; h; h = h->next) {
+      if (h->compared.load(std::memory_order_relaxed) == 0)
+        unverified << h->name << "\n";
+    }
+  }
 }
 
 }  // namespace banjo::hot

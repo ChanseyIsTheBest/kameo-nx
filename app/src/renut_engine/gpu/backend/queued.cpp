@@ -657,7 +657,9 @@ void QueueDeferredDraw(u32 device_va, const DrawCall &call, const u8 *scratch, u
   // (every hook flushes its device's deferred draw first), so the render thread still applies the chain in order. A
   // recorded op made meanwhile (NewOp: ForgetSnapshotDeltas) only makes the next capture a whole one, queued after this
   // draw. A draw that will not be queued (no scratch) stays a whole capture outside the chain.
-  if (DeltasOn() && DeferredChainOn() && scratch) {
+  // kameo-nx: A/B 71's off half makes a whole capture, which simply restarts the chain. FlushDeferredVertices takes the chain's
+  // lock by the key alone, so a draw made in one half and queued in the other is still queued under it.
+  if (DeltasOn() && DeferredChainOn() && banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed) != 71 && scratch) {
     std::unique_lock<std::mutex> chain(g_delta.mutex);
     {
       std::lock_guard lock(g_deferred_mutex);

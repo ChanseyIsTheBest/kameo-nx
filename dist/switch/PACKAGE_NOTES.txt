@@ -15,8 +15,10 @@ Which toml
 ----------
 renut.toml        shipped settings, logs and diagnostics on: use this first.
 renut_play.toml   the same with the render-thread diagnostics off, for playing.
-renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. Stand still in one place for 10+ minutes
-                  and send logs/renut_001.log: the "[renut A/B]" lines give each target.
+renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. A round is 8 minutes and the list starts
+                  at boot, so the first round lands partly on menus and loading: get into gameplay, stand still in one place
+                  for 25 minutes or more, and send logs/renut_001.log. The "[renut A/B]" lines give each target; read them
+                  against target 1's spread. In the emulator that spread was 3 ms, and no target could be judged.
 configs/          renut_verify.toml (slow; every verify key), renut_profile.toml (sampling profile), renut_pgo.toml, and the
                   options that change the picture, each one key away from renut.toml, for you to decide on.
 
@@ -27,7 +29,9 @@ What to test, in order
 3. Sound in the movie and in gameplay.
 4. Frame rate in Thorn's Castle, handheld (720 lines) and docked (1080 lines). Docked at 1080 has not been run at all.
 5. A DLC outfit, if the DLC is installed. Never selected in a test so far; Expert no longer refuses for the Power Pack.
-6. A 10-minute stay in one place with renut_ab.toml.
+6. A 25-minute stay in one place with renut_ab.toml. Target 71 is the question for you: Begin*Vertices draws in the delta chain,
+   on here and off in banjo-nx. It removes about 12 MB/s of memcpy from the drawing thread on the PC, and could not be measured
+   in the emulator.
 
 Things most likely to go wrong
 ------------------------------
