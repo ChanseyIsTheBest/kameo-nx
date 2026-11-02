@@ -19,6 +19,7 @@
 
 #include <xxhash.h>
 
+#include <rex/cvar.h>
 #include <rex/hook.h>
 #include <rex/ppc.h>
 #include <rex/types.h>
@@ -38,6 +39,10 @@
 #include "renut_engine/gpu/render/surfaces.h"
 
 extern std::atomic<uint64_t> g_banjo_game_frames;  // kameo_keys.cpp: frames presented
+
+REXCVAR_DEFINE_BOOL(kameo_gamma_census, false, "Banjo/Diagnostics",
+                    "Diagnostic: per draw, count gamma colour targets, colour exponent bias and texture slots signed Gamma, "
+                    "none of which Renut handles, and log each new kind (docs/kameo-notes.md)");
 
 using namespace renut::gpu;
 
@@ -200,6 +205,57 @@ void NoteBoundSurfaces(u32 device, PrepareMemo &memo) {
   }
 }
 
+// kameo_gamma_census: Halo 3's port found Renut has no gamma textures, gamma targets or colour exponent bias, so does this game
+// use them? A slot's constant may be stale, not sampled by this draw's shader, so the texture count is an upper bound.
+void GammaCensus(u32 device) {
+  static const bool on = REXCVAR_GET(kameo_gamma_census);
+  if (!on)
+    return;
+  static std::mutex mutex;
+  static uint64_t draws = 0, target_draws = 0, bias_draws = 0, fetch_draws = 0;
+  static std::unordered_map<u32, bool> seen;
+  std::lock_guard lock(mutex);
+  ++draws;
+  bool gamma_target = false, biased = false, gamma_fetch = false;
+  const auto *bound = GuestPtr<const be_u32>(device + native::off::RenderTargets);
+  for (u32 i = 0; i < d3d::kMaxRenderTargets; ++i) {
+    const u32 va = bound[i];
+    const u8 *header = va ? GuestPtr<const u8>(va) : nullptr;
+    if (!header)
+      continue;
+    const u32 info = *reinterpret_cast<const be_u32 *>(header + 52);
+    const u32 format = (info >> 16) & 0xF;
+    const u32 bias = (info >> 20) & 0x3F;
+    gamma_target |= format == 1;  // k_8_8_8_8_GAMMA
+    biased |= bias != 0;
+    if (!seen.emplace(format | bias << 8, true).second)
+      continue;
+    RGPU_INFO("[kameo] gamma census: colour target format {} exponent bias {}, surface {:#010x}, at draw {}", format, bias, va,
+              draws);
+  }
+  const auto *fetch = GuestPtr<const d3d::TextureFetchConstant>(device + native::off::TextureFetch);
+  for (u32 slot = 0; slot < d3d::kTextureFetchSlots; ++slot) {
+    const u32 word0 = fetch[slot].dword[0];
+    if ((word0 & 3) != 2)
+      continue;
+    const u32 signs = (word0 >> 2) & 0xFF;
+    if (!((signs & (signs >> 1)) & 0x55))  // a component's two bits both set: TextureSign::Gamma
+      continue;
+    gamma_fetch = true;
+    const u32 format = u32(fetch[slot].dword[1]) & 0x3F;
+    if (!seen.emplace(0x80000000u | format | signs << 8 | slot << 16, true).second)
+      continue;
+    RGPU_INFO("[kameo] gamma census: texture slot {} signs {:#04x} format {}, base {:#010x}, at draw {}", slot, signs, format,
+              u32(fetch[slot].dword[1]) & ~0xFFFu, draws);
+  }
+  target_draws += gamma_target;
+  bias_draws += biased;
+  fetch_draws += gamma_fetch;
+  if (draws % 2000000 == 0)
+    RGPU_INFO("[kameo] gamma census: {} draws, {} to a gamma target, {} with exponent bias, {} with a Gamma slot bound", draws,
+              target_draws, bias_draws, fetch_draws);
+}
+
 // The device's first hook: the renderer learns it (the game's own Direct3D_CreateDevice made it).
 void NoteDevice(u32 device) {
   static std::atomic<u32> known{0};
@@ -223,6 +279,7 @@ void Prepare(u32 device) {
   SetWord(device + d3d::kKameoDeclarationId, DeclarationIdOf(declaration, memo));
   SyncStreams(device, declaration);
   NoteBoundSurfaces(device, memo);
+  GammaCensus(device);
 }
 
 bool ReadRect(u32 va, ClearRect &rect) {

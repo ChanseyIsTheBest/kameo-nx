@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <system_error>
+#include <thread>
 
 #include <rex/cvar.h>
 #include <rex/filesystem.h>
@@ -59,6 +60,28 @@ bool End() {
   return api && api->EndFrameCapture(nullptr, nullptr);
 #else
   return false;
+#endif
+}
+
+// kameo-nx (2026-11-03): the same capture on a timer, for the SDK's emulated GPU: the game frame above comes from Renut's Swap
+// hook, which that renderer never calls. A quarter of a second of GPU work holds several frames at any rate it runs.
+void StartTimed() {
+#if defined(_WIN32)
+  const int32_t at = REXCVAR_GET(banjo_renderdoc_game_s);
+  if (at <= 0) return;
+  std::thread([at] {
+    std::this_thread::sleep_for(std::chrono::seconds(at));
+    const auto folder = rex::filesystem::GetExecutableFolder() / "capturas" / "rdc";
+    std::error_code ec;
+    std::filesystem::create_directories(folder, ec);
+    if (!Start((folder / "banjo").string().c_str())) {
+      REXLOG_WARN("[renderdoc] timed capture requested but RenderDoc is not loaded");
+      return;
+    }
+    REXLOG_INFO("[renderdoc] timed capture started");
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    REXLOG_INFO("[renderdoc] timed capture ended: {}", End() ? "ok" : "FAILED");
+  }).detach();
 #endif
 }
 

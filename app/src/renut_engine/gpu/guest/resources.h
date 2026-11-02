@@ -47,6 +47,7 @@ struct ShaderRecord {
 
   uint64_t hash = 0;
   const ShaderCacheEntry *entry = nullptr;  // nullptr: not in the cache (captured)
+  u32 fetch_3d_mask = 0;  // kameo-nx (2026-11-03): the slots its microcode reads through tfetch3D (Fetch3DMask, d3d/hooks/shader.cpp)
   // banjo-nx (2026-10-23, render-thread round): what every draw reads, together in the record's first lines (the host
   // shader, the summary and the specialised bools were in its fourth to sixth lines, past the stride arrays). The
   // host shader is built on first use by a pipeline, under host_mutex (below).

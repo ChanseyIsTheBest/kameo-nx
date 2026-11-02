@@ -1154,6 +1154,11 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
   if (!header)
     return binding;
   TextureFetch fetch = TextureFetch::FromHeader(header->Format);
+  // kameo-nx (2026-11-03, banjo_renut_fetch3d_on_2d): FillTextures marks a 2D fetch stacked for a shader that reads it through
+  // tfetch3D: a host texture of its own (a header can be sampled both ways), reached by the 3D table's stacked path.
+  const bool as_stacked = device_fetch.Stacked() && !fetch.Stacked() && fetch.IsTexture();
+  if (as_stacked)
+    fetch.dword[1] |= 1u << 10;
   // SetTexture copied the header into the device's fetch constant. A header
   // that no longer matches it was a temporary the game has overwritten since
   // (a command buffer runs after its recording thread's stack moved on); the
@@ -1239,7 +1244,7 @@ TextureBinding BindTextureLocked(u32 texture_va, const TextureFetch &device_fetc
     binding.lod_scale = resolved->extra_levels ? resolved->scale : RenderScale{};
     return binding;
   }
-  auto &slot = TextureSlot(texture_va);
+  auto &slot = TextureSlot(as_stacked ? texture_va | 1 : texture_va);
   // A resolve destination sampled through a fetch constant that differs from
   // its header only in fields that leave the data alone (the mip range, say)
   // keeps what the resolve wrote.

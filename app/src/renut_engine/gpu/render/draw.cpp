@@ -60,6 +60,9 @@ extern "C" char *fake_heap_end;  // libnx: the end of the malloc heap
 
 // banjo-nx (2026-10-17, a diagnostic for the deko3d renderer's missing river water): draws that read memexport results
 // as vertices take them through the CPU path (wait for the export, read it back) instead of stream_convert_cs.
+REXCVAR_DEFINE_BOOL(banjo_renut_fetch3d_on_2d, true, "Banjo/Renut",
+                    "A shader's tfetch3D on a 2D fetch constant samples the texture, as the GPU does; off: the 3D table's null "
+                    "texture, which lost the sun's glow on Kameo's clouds (docs/kameo-notes.md; A/B 72)");
 REXCVAR_DEFINE_BOOL(banjo_renut_diag_no_stream_convert, false, "Banjo/Renut",
                     "Diagnostic: exported streams reach their draws through the CPU (no stream_convert_cs)");
 // banjo-nx (2026-10-17, a diagnostic for the depth of field that banjo_gpu_blend_skip breaks): pixel shaders (their
@@ -3157,8 +3160,35 @@ void BindingWords(const TextureBinding &binding, const TextureFetch &fetch, u32 
   }
   sampler = SamplerWord(SamplerSlotLocked(fetch, binding.lod_scale));
 }
+// kameo-nx (2026-11-03, banjo_renut_fetch3d_on_2d, the idea from Kameo: RePowered's texture_upload.cpp, MIT): the slots this
+// draw's shaders read through tfetch3D. XenosRecomp samples those through the 3D table, where a 2D texture reads the null
+// slot, whereas the GPU samples whatever the fetch constant describes. Marked stacked, the texture takes the 3D table's
+// stacked path (tfetchStacked), one that is here on deko3d too, with no change to any shader.
+u32 g_fetch_3d_mask = 0;
+
+inline u32 Fetch3DMaskOf(const ShaderRecord *vs, const ShaderRecord *ps) {
+  static const bool on = REXCVAR_GET(banjo_renut_fetch3d_on_2d);
+  if (!on || banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed) == 72)
+    return 0;
+  return (vs ? vs->fetch_3d_mask : 0) | (ps ? ps->fetch_3d_mask : 0);
+}
+
+[[gnu::noinline]] void SampleAsStacked(TextureFetch &fetch, u32 r) {
+  if (!fetch.IsTexture() || fetch.Dimension() != TextureDimension::Tex2D || fetch.Stacked())
+    return;
+  fetch.dword[1] |= 1u << 10;
+  static std::unordered_map<u32, bool> logged;
+  if (logged.size() < 32 && logged.emplace(fetch.BasePage(), true).second) {
+    RGPU_INFO("[renut] a 2D texture read through tfetch3D (banjo_renut_fetch3d_on_2d): slot {} format {} size {}x{} base {:08X}", r,
+              u32(fetch.Format()), (fetch.dword[2] & 0x1FFF) + 1, ((fetch.dword[2] >> 13) & 0x1FFF) + 1, fetch.BasePage() << 12);
+  }
+}
+
 void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc, BindEffects *slot_fx = nullptr,
                   bool *all_memo = nullptr, const TextureFetch *draw_fetches = nullptr, bool *same_as_last = nullptr) {
+  const u32 as_stacked = g_fetch_3d_mask & fetch_mask;
+  if (as_stacked)
+    draw_fetches = nullptr;  // made here, with those slots marked
   if (all_memo)
     *all_memo = banjo::renut_gpu::CpuMemosOn();
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_texture_defaults_copy): the null words as one copy of a block made once (160 stores a
@@ -3223,8 +3253,11 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
                          !PersistentSharedVerifyOn();
   for (u32 bits = fetch_mask; bits; bits &= bits - 1) {
     const u32 r = u32(std::countr_zero(bits));
-    if (!draw_fetches)
+    if (!draw_fetches) {
       slots.f[r] = DeviceTextureFetch(dev, r);
+      if ((as_stacked >> r) & 1) [[unlikely]]
+        SampleAsStacked(slots.f[r], r);
+    }
     const u32 va = device.U32(d3d::kDeviceOffsetTextures + r * 4);
     if (!va)
       continue;
@@ -7293,8 +7326,9 @@ bool DrawsWithoutPixelShader(const GuestDevice &device, const Targets &t, const 
 
 // banjo-nx (2026-10-18, matching RenderDoc captures of Ryujinx to the game's shaders): banjo_renut_diag_draw_log_s
 // seconds after the first draw, every draw of the next two frames: its shaders, counts, target and state, in order.
-void DrawLog(const DrawCall &call, const Geometry &geometry, const ShaderRecord *vs, const ShaderRecord *ps,
-             const Targets &targets, const PipelineKey &key, const SharedConstants &sc, u32 export_count) {
+void DrawLog(const GuestDevice &device, const DrawCall &call, const Geometry &geometry, const ShaderRecord *vs,
+             const ShaderRecord *ps, const Targets &targets, const PipelineKey &key, const SharedConstants &sc,
+             u32 export_count) {
   static const int32_t at = REXCVAR_GET(banjo_renut_diag_draw_log_s);
   if (at <= 0)
     return;
@@ -7323,6 +7357,17 @@ void DrawLog(const DrawCall &call, const Geometry &geometry, const ShaderRecord 
             c0 ? int(c0->format) : -1, targets.color_count, targets.depth ? int(targets.depth->format) : -1,
             key.depth_control, key.blend_control[0], key.color_mask, key.alpha_to_coverage, sc.vertex_fetch_bytes,
             export_count);
+  // kameo-nx (2026-11-03): each slot the shaders read and what it bound (the sky's glow samples a null texture).
+  const u32 texture_mask =
+      (vs && vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
+  for (u32 bits = texture_mask; bits; bits &= bits - 1) {
+    const u32 r = u32(std::countr_zero(bits));
+    const TextureFetch fetch = DeviceTextureFetch(device.dev(), r);
+    RGPU_INFO("[drawlog]   slot {} texture {:08X} fetch {:08X} {:08X} {:08X} {:08X} {:08X} {:08X} words {} {} {} sampler {:X}", r,
+              device.U32(d3d::kDeviceOffsetTextures + r * 4), fetch.dword[0], fetch.dword[1], fetch.dword[2], fetch.dword[3],
+              fetch.dword[4], fetch.dword[5], sc.texture_indices[0][r], sc.texture_indices[1][r], sc.texture_indices[2][r],
+              sc.sampler_indices[r]);
+  }
 }
 
 #if defined(PLUME_DEKO3D)
@@ -8482,6 +8527,7 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
       : pk && depth_only == pk->depth_only
           ? pk->texture_mask
           : (vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
+  g_fetch_3d_mask = Fetch3DMaskOf(vs, ps);  // kameo-nx (2026-11-03)
 
   // The texture fetches the draw binds, converted when something they come from changed (storage only: the mask's
   // slots are written).
@@ -10033,6 +10079,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   }
   const u32 texture_mask =
       (vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
+  g_fetch_3d_mask = Fetch3DMaskOf(vs, ps);  // kameo-nx (2026-11-03)
   g_handover_targets = &targets;  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_chain_reuse): the previous chain draw's texture and sampler words when FillTextures'
   // memo would answer every bound slot as it did then: the device's fetch constants and texture words unchanged
@@ -10050,13 +10097,15 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     u32 samplers[32] = {};
   };
   static TexturesReuse treuse;
+  static u32 treuse_fetch_3d = 0;  // kameo-nx (2026-11-03): the same device words bind otherwise for another shader
   // banjo-nx (2026-10-23, batch 6): FillTextures' words the same as its previous call's, and the fill count before it
   // (see the shared constants' push below).
   bool texture_words_same = false;
   uint64_t texture_fill_before = 0;
   bool textures_reused = targets_reuse_on && chain.seq && chain.seq == treuse.seq + 1 && treuse.mask == texture_mask &&
                          treuse.frame == TextureFrameLocked() && treuse.epoch == g_texture_epoch &&
-                         treuse.depth_epoch == g_depth_epoch && treuse.depth == targets.depth;
+                         treuse.depth_epoch == g_depth_epoch && treuse.depth == targets.depth &&
+                         treuse_fetch_3d == g_fetch_3d_mask;
   // banjo-nx (2026-10-26): each bound slot's fetch constant and texture word compared (FillTextures reads those of the
   // mask's slots only; the others' words are its defaults), not every fetch constant's and texture word's chunk.
   // banjo-nx (2026-10-26, Unleashed-style step 1): the fetch constants and texture words compared only when the
@@ -10131,6 +10180,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     if (targets_reuse_on && all_memo && chain.seq) {
       // Kept for the next draw only when every slot is one the memo keys (a header), as it then answers them all.
       treuse.mask = texture_mask;
+      treuse_fetch_3d = g_fetch_3d_mask;
       treuse.frame = TextureFrameLocked();
       treuse.epoch = g_texture_epoch;
       treuse.depth_epoch = g_depth_epoch;
@@ -10751,7 +10801,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   static const bool draw_log = !REXCVAR_GET(banjo_renut_lean_diagnostics) ||
                                REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0;
   if (draw_log)
-    DrawLog(call, geometry, vs, ps, targets, key, sc, export_count);
+    DrawLog(device, call, geometry, vs, ps, targets, key, sc, export_count);
   // banjo-nx (2026-10-19, banjo_renut_resolve_skip): the targets this draw can write.
   for (u32 i = 0; i < targets.color_count && i < key.color_count; ++i)
     if ((key.color_mask >> (4 * i)) & 0xF)

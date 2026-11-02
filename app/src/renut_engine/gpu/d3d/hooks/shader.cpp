@@ -536,6 +536,57 @@ void RegisterGuestShader(u32 shader_va, u32 physical_va, bool pixel) {
   });
 }
 
+// kameo-nx (2026-11-03, banjo_renut_fetch3d_on_2d): the slots the microcode reads through tfetch3D. The fetch constant says
+// what the data is, the instruction which table the recompiled shader reads, and they can differ. Field positions are
+// XenosRecomp's shader_code.h; the walk over the control flow is that of Kameo: RePowered's ScanShaderConstantRange
+// (src/gpu/shaders/ucode_scan.cpp, MaxDeadBear and BiRabittoh, MIT).
+u32 Fetch3DMask(const u8 *container) {
+  const auto *header = reinterpret_cast<const d3d::ShaderContainer *>(container);
+  const u32 virtual_size = header->virtualSize;
+  const u32 physical_size = header->physicalSize;
+  // A version 0x0E container (XenosRecomp's container_0e.h, Kameo's) has the microcode as its whole physical part; 0x11 names
+  // where it starts.
+  u32 physical_offset = 0;
+  if ((u32(header->flags) & 0xFFFFFF00u) != 0x102A0E00u) {
+    const u32 shader_offset = header->shaderOffset;
+    if (shader_offset + 4 > virtual_size)
+      return 0;
+    physical_offset = *reinterpret_cast<const be_u32 *>(container + shader_offset);
+  }
+  if (physical_offset >= physical_size)
+    return 0;
+  const auto *code = reinterpret_cast<const be_u32 *>(container + virtual_size + physical_offset);
+  const u32 dwords = (physical_size - physical_offset) / 4;
+  u32 mask = 0;
+  u32 control_flow_end = dwords;  // the instructions start at the lowest address an exec names
+  for (u32 at = 0; at + 3 <= control_flow_end; at += 3) {
+    const u32 c0 = code[at], c1 = code[at + 1], c2 = code[at + 2];
+    const u32 pair[2][2] = {{c0, c1 & 0xFFFF}, {(c1 >> 16) | (c2 << 16), c2 >> 16}};
+    for (const auto &cf : pair) {
+      const u32 opcode = (cf[1] >> 12) & 0xF;
+      if (!((opcode >= 1 && opcode <= 6) || opcode == 13 || opcode == 14))
+        continue;
+      const u32 address = cf[0] & 0xFFF;
+      if (!address)
+        continue;
+      control_flow_end = std::min(control_flow_end, address * 3);
+      const u32 count = (cf[0] >> 12) & 7;
+      u32 sequence = (cf[0] >> 16) & 0xFFF;
+      for (u32 i = 0; i < count; ++i, sequence >>= 2) {
+        const u32 instruction = (address + i) * 3;
+        if (instruction + 3 > dwords)
+          return mask;
+        if (!(sequence & 1))
+          continue;
+        const u32 w0 = code[instruction], w2 = code[instruction + 2];
+        if ((w0 & 0x1F) == 1 && ((w2 >> 14) & 3) == 2)  // TextureFetch, TextureDimension::Texture3D
+          mask |= 1u << ((w0 >> 20) & 31);
+      }
+    }
+  }
+  return mask;
+}
+
 // kameo-nx: the game's own Create*Shader made the object; this is its host side, keyed by the object's address, from the
 // container it was given (XXH3 of the virtual part and the physical part: what the shader cache is keyed by).
 void RegisterGameShaderImpl(u32 shader_va, const u8 *container, bool pixel) {
@@ -545,7 +596,7 @@ void RegisterGameShaderImpl(u32 shader_va, const u8 *container, bool pixel) {
   if (!sort_entry)
     CaptureMissingShader(container, pixel, hash);
   NoteShaderSortKey(shader_va, hash, ShaderSortableByHash(hash, sort_entry, pixel));
-  render_thread::Queue([shader_va, hash, kind] {
+  render_thread::Queue([shader_va, hash, kind, fetch_3d_mask = Fetch3DMask(container)] {
     auto &shader = g_guest_shaders[shader_va];
     if (shader && shader->hash == hash && shader->kind == kind) {
       ForgetShader(shader_va);
@@ -561,6 +612,7 @@ void RegisterGameShaderImpl(u32 shader_va, const u8 *container, bool pixel) {
     shader->self_va = shader_va;
     shader->hash = hash;
     shader->entry = FindShaderEntry(hash);
+    shader->fetch_3d_mask = fetch_3d_mask;
     PipelineShaderLoaded(shader->entry);
   });
 }

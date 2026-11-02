@@ -26,3 +26,5 @@ All times AEST, 2026-11-02 / 03.
 - 05:09 `verify5`: 426 of 446 copies reached, 18.5 million calls compared, 0 differences. 110 without a compared call held out.
 - 05:44 `emu14`: the NRO that ships reaches gameplay, every verify line 0 differ.
 - 05:50 Time limit moved to 18:00 by the user. Tested package made.
+- 06:02 The user asked for a document on making Renut accurate, shared between ports: https://claude.ai/artifact/Ek4W2j42vrHqTWTmcB3HeC. Read Ridge Racer 6, Halo 3; asked Viva Pinata, Sonic and Pac-Man.
+- 06:15 Chains closed: not the renderer. The game submits fewer rings (318 vertices against 60), and our own renderer on deko3d at low frame rates is as sparse as the reference. Their spacing, and the player's height on the wall, follow the frame rate. Sky: `e20049` ruled out; the reference's window varies from (16,12,6) to (255,255,203), so a long idle run of ours (`idle_long`) tests the phase. Gamma census (`kameo_gamma_census`) written, not yet built.

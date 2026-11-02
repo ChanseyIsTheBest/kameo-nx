@@ -913,6 +913,8 @@ const char *AbName(int target) {
   case 70: return "the localized copies of the hot functions (localized.txt; off half: the generated originals)";
   // kameo-nx (2026-11-03): off half: each Begin*Vertices draw a whole copy of the device, as banjo-nx.
   case 71: return "Begin*Vertices draws in the delta chain (banjo_renut_deferred_chain)";
+  // kameo-nx (2026-11-03): off half: a tfetch3D on a 2D fetch reads the null texture (the sun's glow on the clouds lost).
+  case 72: return "2D textures read through tfetch3D (banjo_renut_fetch3d_on_2d)";
   default: return "none";
   }
 }

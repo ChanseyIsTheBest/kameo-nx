@@ -63,7 +63,7 @@ PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders
 # key) is the do-nothing control on the Switch. The record-time items (45-50) have nothing to act on here, and target 26 (the
 # setters' touch compare) neither: the game's own setters stay.
 # 8 targets x 60 s = 8 minutes a round: 24+ minutes.
-AB = {'banjo_renut_ab_targets': '"71,25,28,22,33,42,70,1"', 'banjo_renut_ab_s': '30',
+AB = {'banjo_renut_ab_targets': '"72,71,25,28,22,33,42,70,1"', 'banjo_renut_ab_s': '30',
       'banjo_renut_dynamic_resolution': 'false'}
 VERIFY = {k: 'true' for k in (
     'banjo_renut_fast_draw_verify', 'banjo_renut_resource_objects_verify', 'banjo_renut_fetch_cache_verify',

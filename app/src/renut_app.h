@@ -61,6 +61,9 @@ void RexSwitchApmApply(void);
 #endif
 
 void KameoInstallFpGuard();  // src/kameo_fp_guard.cpp
+namespace banjo::renderdoc {
+void StartTimed();  // me/banjo_renderdoc.cpp
+}
 
 class RenutApp : public rex::ReXApp {
 public:
@@ -240,6 +243,10 @@ public:
 #endif
         // The PGO-instrumented build (BANJO_PGO=generate) saves its counts to pgo/ every 2 minutes (nothing otherwise).
         banjo::pgo::Start();
+#if BANJO_RENUT_RENDERER
+        if (!banjo::renut_gpu::Active())
+#endif
+            banjo::renderdoc::StartTimed();  // kameo-nx: the emulated GPU has no Renut Swap hook to ask for it
     }
 
     // The PGO-instrumented build saves its counts when the game loses focus (HOME menu): it may be closed from there.
