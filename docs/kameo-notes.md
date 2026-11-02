@@ -130,11 +130,22 @@ Reference: the SDK's emulated GPU (`--banjo_renderer=emulated --gpu_plugin=xenos
 
 | # | Difference | Cause found | State |
 |---|---|---|---|
-| 1 | Our picture is darker in the midtones everywhere (menus and gameplay) | the display's gamma ramp: `SetGammaRamp` (`sub_820C48B8`) stores the converted ramp at device `+0x36EC`; our Swap still read N&B's offset, and `banjo_renut_game_gamma` was off. RePowered records the same difference (`kameo_gfx_gamma`: median 30 against the reference's 55) | fix ready, our own key, no graft |
-| 2 | The sky through the castle window is blown out to white with a wide halo; in the reference it is a muted orange | to be measured with `renut_post_process_precision = "Game"`: the PC default keeps bloom buffers at 16 bits, the console's are 8 | testing |
+| 1 | Our picture is darker in the midtones everywhere (menus and gameplay) | the display's gamma ramp: `SetGammaRamp` (`sub_820C48B8`) stores the converted ramp at device `+0x36EC`; our Swap still read N&B's offset, and `banjo_renut_game_gamma` was off. RePowered records the same difference (`kameo_gfx_gamma`: median 30 against the reference's 55) | **fixed** (`renut10`, `emu2`): our own key, on by default, no graft |
+| 2 | The sky through the castle window is blown out to white with a wide halo; in the reference it is a muted orange | the PC default kept bloom buffers at 16 bits, the console's are 8: `renut_post_process_precision` now defaults to `"Game"` | halo gone in `renut10`; the window's colour still pale grey against the reference's cream, to be checked with the same sky |
 | 3 | Thin chains above the player in ours, not visible in the reference | not looked at yet | open |
+| 4 | Thin magenta contours in bright areas (G exactly 0, R about 254, B about 130; title, opening movie, a line at the edge of the gameplay sky). Both back ends. `renut10/captura_008_0120s.png`: 11,907 such pixels; `renut8`: 0; reference: 3 | **our own bug, from fixing difference 1**: the Swap hook still wrote N&B's fence tag at `0x3A44`, inside the ramp at `+0x36EC`: word 428, green entry 172, took its high half (0) and entry 173 its low half. The contour pixels' neighbours worked back to input green 172, and the log showed the ramp "changing" 1,315 times while its printed entries stayed put. Kameo's Swap (`sub_820D1860`) has no such fields, so the three writes are gone | fix built, being checked in `renut11` |
+
+**A correction.** The first entry for difference 4 called the clouds "flat and blurred" in ours and suspected the cloud clusters. Wrong on both counts. RenderDoc shows that scene is a Bink movie (`fmv\Cloud_Flying.bik`: Y at 1280x720, U and V at 640x360, three draws a frame), and its frames come out soft and detailed in ours (`out/rdc/rdc2/pass_002_e76.png`). The soft look at 120 s is the movie's own cross-dissolve, and I had compared frames 15 s apart. Movie frames at the same moment still need comparing.
 
 The reference fakes occlusion query results too (`query_occlusion_fake_sample_count`, as our hook's 1000), so RePowered's real occlusion counts for light glows fix no difference from the reference. They go in the report as a decision.
+
+## Ryujinx runs
+
+| Run | NRO | Result |
+|---|---|---|
+| `emu1` (22:56, 420 s, verify keys) | first build, 46 MB | deko3d draws the title and menus. No crash. Every verify line 0 differ, plus 3 `fast_draw_verify` notes with the same pipeline key and a different object, each beside a uam "background run-time variant" line (the generic variant while the specialised one builds; katamari-nx and pacman-nx record the same). 100 % fast draws, 4.6 % whole buffers, 50-55 fps at the menus. **False colours**: this test's toml turned on `banjo_renut_game_gamma` while this binary still read N&B's ramp offset, so the present looked up garbage. Script off by one press: it reached Expert, which asks for the Power Pack. Neither is a renderer finding; to be confirmed by the next build. |
+
+`emu2` (23:25, 480 s, verify keys, DLC in place): **the colours are right on deko3d**: title and menus match the PC, the same gamma ramp read (`[64]=307`, `[128]=568`, `[255]=1023`). All four DLC packs installed through hard links in the emulator's `dlc` folder (the installer reads them as they come; nothing copied). 39 verify lines 0 differ, 1 provisional-pipeline note, 100 % fast draws, 46-60 fps at the menus. Three host stalls of 40-60 s with no frames at all (one at 13:27, two at 13:31, while other ports were building); the first ate the START press, so the script went to Leaderboards and never reached gameplay. Fix: `input_script_polls`, the script's clock counts the game's own polls. The magenta contours (difference 4) show on deko3d too.
 
 ## Enhancements audit (2026-11-02)
 

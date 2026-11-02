@@ -337,9 +337,6 @@ constexpr u32 kDeviceOffsetPrimaryRingMask = 0x36A0;
 constexpr u32 kDeviceOffsetFenceCompletion = 0x2890;
 constexpr u32 kDeviceOffsetFenceTag = 0x289C;
 constexpr u32 kDeviceOffsetInKickOff = 0x34D0;  // KickOff, BlockOnFence: nonzero while a kick runs
-constexpr u32 kDeviceOffsetSwapCount = 0x4098;  // not used by the game's device here (the Swap hook does not count)
-constexpr u32 kDeviceOffsetSwapFenceTag = 0x2AB0;     // not used here
-constexpr u32 kDeviceOffsetPresentFenceTag = 0x3A44;  // not used here
 constexpr u32 kDeviceOffsetSwapFlags = 0x28C1;
 constexpr u8 kSwapFlagPending = 0x10;
 

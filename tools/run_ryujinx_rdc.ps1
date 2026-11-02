@@ -9,15 +9,15 @@ param([int]$Seconds = 420, [string]$Name = "rdc", [string]$Toml = "", [string]$T
 $root = Split-Path -Parent $PSScriptRoot
 $rdcDir = "D:\Banjo kazooie port\tools\RenderDoc_1.46_64"
 $ryu = "D:\New folder\Ryubing-src\ryubing\build\Ryujinx.exe"
-$data = "D:\New folder\ryu-data\katamari"
+$data = "D:\New folder\ryu-data\kameo"
 $sd = Join-Path $data "sdcard\switch\kameo-nx"
 $nro = Join-Path $sd "kameo-nx.nro"
 $out = Join-Path $root "out\emu_runs\$Name"
-if (Get-Process -Name Ryujinx -ErrorAction SilentlyContinue) { Write-Output "a Ryujinx is running (another port's?): not starting"; exit 2 }
+if (@(Get-Process -Name Ryujinx -ErrorAction SilentlyContinue).Count -ge 2) { Write-Output "two Ryujinx are running (other ports'): not starting"; exit 2 }
 $os = Get-CimInstance Win32_OperatingSystem
 $freeCommit = $os.FreeVirtualMemory / 1MB
 if ($freeCommit -lt $MinCommitGB) { Write-Output ("free commit memory {0:N1} GB < {1} GB: not starting" -f $freeCommit, $MinCommitGB); exit 3 }
-if ($Toml) { Copy-Item $Toml (Join-Path $sd "renut.toml") -Force }
+if ($Toml) { Copy-Item $Toml (Join-Path $sd "kameo.toml") -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
 $logs = Join-Path $sd "logs"
 if (Test-Path $logs) { Remove-Item -Recurse -Force $logs }

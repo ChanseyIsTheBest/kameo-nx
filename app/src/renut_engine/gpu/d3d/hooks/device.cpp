@@ -62,6 +62,9 @@ extern "C" uint32_t RexSetGuestThreadCoreLayout(int main_core, uint32_t others_m
 void renutFrameLimit();  // kameo_keys.cpp: the player's frame_cap
 #include "profiler/profiler.h"  // kameo-nx: the frame boundary at Swap
 extern std::atomic<uint64_t> g_banjo_game_frames;  // kameo_keys.cpp: frames presented
+namespace banjo::renderdoc {
+void GameFrame();  // me/banjo_renderdoc.cpp
+}
 
 // banjo-nx (2026-10-20, from sa2-nx's sa2_renut_core_layout): see D3DDevice_Swap_hook.
 REXCVAR_DEFINE_BOOL(banjo_renut_core_layout, false, "Banjo/Enhancements",
@@ -878,6 +881,7 @@ void D3DDevice_RunCommandBuffer_hook(u32 device_va, u32 command_buffer,
 // goes on with the next one, waiting only when it is more than
 // render_thread::kMaxFramesAhead ahead.
 void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
+  banjo::renderdoc::GameFrame();  // kameo-nx: banjo_renderdoc_game_s (its appMainDraw hook is N&B's, not built here)
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_core_layout, the Switch): once, the guest main thread alone on core 0,
   // the other guest threads on cores 1-2 (preferring 2: the render thread is pinned to core 1 at a higher priority).
   // Before, every guest thread could run on any core, time-sliced at their priority (0x3B).
@@ -898,19 +902,12 @@ void D3DDevice_Swap_hook(u32 device_va, u32 front_buffer, u32 /*parameters*/) {
   FlushDeferredVertices(device_va);
   SnapshotDeltasNewFrame();  // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_snapshot_deltas)
 
-  // What the original does after handing the frame to the video hardware:
-  // count the swap, record the frame's fence tag, and end the frame with a
-  // KickOff, whose fence completes once the render thread gets there.
+  // What the original does after handing the frame to the video hardware: end the frame with a KickOff, whose fence
+  // completes once the render thread gets there. kameo-nx: N&B's swap count and two fence tags are not written: Kameo's
+  // Swap (sub_820D1860) has no such fields, and the second, at 0x3A44, lay inside the gamma ramp at +0x36EC: green entries
+  // 172 and 173 took the fence tag, so every pixel with that green came out at 0 (magenta contours, renut10).
   auto *device = GuestPtr<u8>(device_va);
   if (device) {
-    auto word = [device](u32 offset) -> be_u32 & {
-      return *reinterpret_cast<be_u32 *>(device + offset);
-    };
-    word(d3d::kDeviceOffsetSwapCount) = u32(word(d3d::kDeviceOffsetSwapCount)) + 1;
-    const u32 fence_tag = word(d3d::kDeviceOffsetFenceTag);
-    word(d3d::kDeviceOffsetSwapFenceTag) = fence_tag;
-    word(d3d::kDeviceOffsetPresentFenceTag) = fence_tag;
-    native::DeviceAt(device_va).Touch(d3d::kDeviceOffsetSwapFenceTag);  // banjo-nx (2026-10-26, banjo_renut_tags)
     device[d3d::kDeviceOffsetSwapFlags] &= u8(~d3d::kSwapFlagPending);
     // banjo-nx (package 27c): the frame's last vertex and texture fills are read here, before the Swap's fence
     // completes. They were read at the present, after it: the game, told the frame was done, could rewrite a dynamic

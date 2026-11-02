@@ -50,6 +50,12 @@ REXCVAR_DEFINE_STRING(input_script, "", "Input",
                       "and RSUP RSDOWN RSLEFT RSRIGHT (e.g. '30:LSUP@2.5'). While set, user 0 always has a pad "
                       "connected (works minimized, with no controller)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-02): emu2 lost its START in a 46 s host stall, so every later press landed one screen off.
+REXCVAR_DEFINE_INT32(input_script_polls, 0, "Input",
+                     "Test automation with input_script: 0 the script's seconds are the wall clock; N each input poll of "
+                     "user 0 advances them by 1/N s, so the script stops whenever the game stops (a host stall, a long "
+                     "load) and no press falls where no poll can see it")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_INT32(input_script_sticks, 0, "Input",
                      "Test automation with input_script (banjo-nx 2026-10-23): from this many seconds after the first "
                      "input poll, both analog sticks of user 0 wander at random (a new direction every 1.5 s, eased "
@@ -289,8 +295,11 @@ const std::vector<ScriptedPress>& InputScript() {
   }();
   return presses;
 }
-// Seconds since the first input poll (the script's clock).
+// Seconds since the first input poll (the script's clock), or the polls counted (input_script_polls).
+uint64_t g_script_polls = 0;
 double ScriptSeconds() {
+  static const int32_t polls = REXCVAR_GET(input_script_polls);
+  if (polls > 0) return double(g_script_polls) / double(polls);
   static const auto start = std::chrono::steady_clock::now();
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
@@ -401,6 +410,7 @@ X_RESULT InputSystem::GetState(uint32_t user_index, X_INPUT_STATE* out_state) {
   rex::latency::BeforeInputRead();
   rex::latency::NoteInputRead();
   if (user_index == 0 && !InputScript().empty()) {  // input_script: only the scripted presses
+    ++g_script_polls;
     const uint16_t buttons = ScriptedButtons();
     static uint32_t packet = 1;
     static uint16_t last = 0;
