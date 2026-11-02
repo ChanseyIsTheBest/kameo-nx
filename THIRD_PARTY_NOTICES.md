@@ -20,6 +20,30 @@ The Horizon (Switch) layer added to `sdk/` is under the SDK's BSD-3-Clause licen
 `app/thirdparty/reblue-XenosRecomp` under XenosRecomp's MIT license, so they can be reused by other ports. The rest of
 this repository (`app/`, `tools/`, `docs/`) is GPL-3.0 (`LICENSE`).
 
+## Kameo: RePowered
+
+Kameo: RePowered by MaxDeadBear and BiRabittoh: its host-side source, tools and CI configuration are available under the
+MIT License (its README). This port took its function list, setjmp and longjmp addresses, each checked against the patched
+image (`app/config/renut_funcs.toml`, `app/renut_config.toml`), `app/src/kameo_fp_guard.cpp` (its `src/core/fp_guard.cpp`),
+the CAFF archive layout in `tools/kameo_files.py`, and every graft named in `docs/kameo-notes.md`. Those parts stay under:
+
+```
+Copyright (c) MaxDeadBear, BiRabittoh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
 ## The deko3d renderer (app/src/renut_engine, app/thirdparty)
 
 - **reNut** (github.com/masterspike52/reNut, by reNut and masterspike52): the Direct3D-level renderer in

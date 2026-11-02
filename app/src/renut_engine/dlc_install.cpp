@@ -116,16 +116,35 @@ void SetUserDataRoot(const fs::path &root) {
 void InstallPackages(rex::Runtime *runtime) {
     if (!runtime || !runtime->kernel_state())
         return;
-    fs::path folder = rex::to_path(REXCVAR_GET(renut_dlc_folder));
-    if (folder.is_relative())
-        folder = rex::filesystem::GetExecutableFolder() / folder;  // banjo-nx: next to the NRO / exe
+    // kameo-nx (2026-11-02): several folders, separated by ';' (each of Kameo's packs came in its own: the PC points at
+    // them as they are). installed.txt stays in the first.
+    std::vector<fs::path> folders;
+    {
+        const std::string text = REXCVAR_GET(renut_dlc_folder);
+        for (size_t at = 0; at < text.size();) {
+            size_t end = text.find(';', at);
+            if (end == std::string::npos)
+                end = text.size();
+            if (end > at) {
+                fs::path one = rex::to_path(text.substr(at, end - at));
+                if (one.is_relative())
+                    one = rex::filesystem::GetExecutableFolder() / one;  // banjo-nx: next to the NRO / exe
+                folders.push_back(std::move(one));
+            }
+            at = end + 1;
+        }
+    }
+    if (folders.empty())
+        return;
+    const fs::path &folder = folders.front();
     std::error_code ec;
     fs::create_directories(folder, ec);
 
     std::vector<fs::path> files;
-    for (const auto &entry : fs::directory_iterator(folder, ec))
-        if (entry.is_regular_file(ec) && entry.path().filename() != kInstalledList)
-            files.push_back(entry.path());
+    for (const fs::path &one : folders)
+        for (const auto &entry : fs::directory_iterator(one, ec))
+            if (entry.is_regular_file(ec) && entry.path().filename() != kInstalledList)
+                files.push_back(entry.path());
     std::sort(files.begin(), files.end());
     if (files.empty())
         return;
