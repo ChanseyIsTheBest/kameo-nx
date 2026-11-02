@@ -3,6 +3,14 @@ kameo-nx: notes for this package
 
 Nothing here has run on a real console. Ryujinx and the PC are proxies: every timing below is theirs, not the A57's.
 
+What this exact NRO has done in Ryujinx (emu14): Rare logo, title, menus, the opening movie and Thorn's Castle, with the four DLC packs
+installed; every verify key on: 0 differences. Handheld. The build before it did the same docked at 1080 lines (emu13docked).
+Frame rate there is 10-19 fps on a shared PC, which says little about the console. What has not been run anywhere: past the opening of
+the first level, a DLC outfit on screen, the water cannon, co-op.
+
+Known differences from the reference (docs/kameo-notes.md has the captures): the sky through the castle window is greyer than the
+reference's orange (cause not established), and the chains above the player look more solid.
+
 Setting up
 ----------
 1. Copy COPY_TO_SD_switch_kameo-nx to sdmc:/switch/kameo-nx/ .

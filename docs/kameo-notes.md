@@ -185,6 +185,10 @@ All four packs install through the base's installer on both builds (Kameo Add-On
 
 `emu12ab` (03:41, 18 minutes, `renut_ab.toml`): every target printed, no hang with target 71 flipping the chain on and off. **Nothing could be judged from it.** The list starts at boot, so targets 71, 25, 28, 22, 33 and 42 fell across changing screens (menus, movie, load). The two measured in gameplay: 70, the copies, 88.9 ms on and 87.0 ms off; 1, the do-nothing control, 99.0 ms on and 102.0 ms off. The control's own spread is larger than the copies' difference, with the machine at a mean of 87 % CPU and up to 20 compiler processes from other ports. Neither the copies nor the chain are shown to gain or lose time. The console decides.
 
+`emu13docked` (04:01, 600 s): **docked at 1080 lines reaches Thorn's Castle with no crash**: render targets 65 MB at x1.5, textures 187 MB, GPU region peak 1,072 MB.
+
+`emu14` (05:34, 560 s, verify keys, **the NRO that ships**, 54.8 MB, 336 copies, all 5,861 shaders, the chain on): logo, title, menus, opening movie, Thorn's Castle. 40 verify lines 0 differ; 3.17 million snapshot draws checked, 0 differ; 335 of 336 copies reached, 2.6 million calls compared, 0 differences; no missing shader, no dropped draw. GPU region 938 MB. Render thread 118-258 ms a frame there with every verify key on, which is not a timing.
+
 Machine load matters to these figures: `tools/load_log.ps1` logs it beside a run. The Game List crawling at 1.5-3 fps in `emu9` was not the save, as I first thought: `emu10prof` holds the same page at 60 fps with a save present, and its slow stretches sit in a period with the CPU at 100 % and 15 compiler processes from another port.
 
 ## Enhancements audit (2026-11-02)

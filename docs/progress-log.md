@@ -20,3 +20,9 @@ All times AEST, 2026-11-02 / 03.
 - 23:49 `emu3`: the Switch build reaches Thorn's Castle in Ryujinx on deko3d, right colours, verify 0 differ. Runaway render targets found (768 MB).
 - 00:16 Surface headers read on the game thread; stream cache 256 MB. `emu5prof`: the stale-header cause proven by its own log line, targets 169 MB, gameplay a steady 12-19 fps in the emulator.
 - 00:32 First hot list merged (247 functions). Malloc per `BeginVertices` and per-draw thread-local calls removed from the drawing thread. Copies building.
+- 01:20 Ring census: every draw packet the game writes itself is D3D's own pipe drain; no draw of the game's lost in the path covered.
+- 01:52 DLC installed on both builds; 1,245 more shaders, 5,861 in all. Deferred chain on (one device), 36.3 million draws checked, 0 differ.
+- 04:01 Docked at 1080 lines reaches gameplay in the emulator.
+- 05:09 `verify5`: 426 of 446 copies reached, 18.5 million calls compared, 0 differences. 110 without a compared call held out.
+- 05:44 `emu14`: the NRO that ships reaches gameplay, every verify line 0 differ.
+- 05:50 Time limit moved to 18:00 by the user. Tested package made.
