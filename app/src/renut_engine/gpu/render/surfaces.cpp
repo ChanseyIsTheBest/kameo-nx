@@ -651,9 +651,9 @@ HostSurface *GetHostSurfaceLocked(u32 surface_va) {
   // Targets made before the first Swap are of the configured scale too.
   if (!g_resolution_latched)
     LatchResolutionScaleLocked();
-  // kameo-nx: from the game's own surface (XDK 2.0.2135's layout).
+  // kameo-nx: from the game's own surface (XDK 2.0.2135's layout), as it was when the draw bound it.
   d3d::SurfaceDesc desc_value;
-  if (!d3d::ReadSurfaceDesc(GuestPtr<const u8>(surface_va), desc_value))
+  if (!d3d::SurfaceDescOf(surface_va, GuestPtr<const u8>(surface_va), desc_value))
     return nullptr;
   const d3d::SurfaceDesc *const desc = &desc_value;
 
@@ -671,6 +671,18 @@ HostSurface *GetHostSurfaceLocked(u32 surface_va) {
     if (g_ui_depth.redirect && m.surface == g_ui_depth.scene)
       return g_ui_depth.surface.get();
     return m.surface;
+  }
+  // kameo-nx: the evidence for SurfaceDescOf, the first few: what reading the header only now would have taken.
+  {
+    static u32 logged = 0;
+    d3d::SurfaceDesc now;
+    if (logged < 16 && d3d::ReadSurfaceDesc(GuestPtr<const u8>(surface_va), now) &&
+        (now.Size != desc->Size || now.SurfaceInfo != desc->SurfaceInfo)) {
+      ++logged;
+      RGPU_WARN("[kameo] surface {:08X} changed since a draw bound it: bound as {}x{}, its header now reads {}x{}",
+                surface_va, d3d::SurfaceWidth(desc->Size), d3d::SurfaceHeight(desc->Size), d3d::SurfaceWidth(now.Size),
+                d3d::SurfaceHeight(now.Size));
+    }
   }
   HostSurface *result = GetHostSurfaceSlow(surface_va, desc);
   if (memo && result) {

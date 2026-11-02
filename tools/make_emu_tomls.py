@@ -18,6 +18,8 @@ OUT = os.path.join(ROOT, 'out', 'emu')
 PAD = ('input_script = "45:START@0.5,55:A@0.5,62:A@0.5,72:DOWN@0.5,78:A@0.5,90:A@0.5,100:A@0.5,110:A@0.5,120:A@0.5,130:A@0.5,'
        '140:A@0.5,150:A@0.5,160:A@0.5,170:A@0.5,180:A@0.5"\ninput_script_polls = 60\ninput_script_sticks = 300\n')
 NO_PAD = 'input_script = ""\ninput_script_sticks = 0\n'
+# Unbuffered: a run is stopped by force, which drops a buffered log's tail (emu4prof's last 3 minutes).
+PAD += 'log_file_writer = false\n'
 CAPTURES = 'nfsmw_captura_cada_s = 15\nnfsmw_captura_max = 60\n'
 TESTS = {
     'emu_verify.toml': (os.path.join('configs', 'renut_verify.toml'), PAD + CAPTURES),

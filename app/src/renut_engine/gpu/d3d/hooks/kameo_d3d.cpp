@@ -138,6 +138,63 @@ void SyncStreams(u32 device, u32 declaration) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The bound surfaces' descriptions, read on the game thread
+// ---------------------------------------------------------------------------
+
+// A draw is replayed later, on the render thread, by when the game may have freed a temporary surface's header and its
+// memory been reused (emu3: "Depth target 42A42250: 797x5410", two image heap chunks of 150 MB and more, then textures
+// evicted every frame). So a surface is read when a draw binds it, and the render thread takes that copy.
+struct BoundSurface {
+  std::atomic<u32> sequence{0};  // odd while being written
+  std::atomic<u32> va{0};
+  std::atomic<u32> info{0}, color{0}, hi{0}, size{0}, format{0}, edram{0};
+};
+BoundSurface g_bound_surfaces[256];
+std::mutex g_bound_surface_mutex;
+
+BoundSurface &BoundSurfaceSlot(u32 va) {
+  return g_bound_surfaces[(va * 0x9E3779B1u) >> 24];
+}
+
+struct SeenSurface {
+  u32 va = 0, size = 0, info = 0;
+};
+thread_local SeenSurface t_seen_surfaces[5];
+
+// Per draw: three words for each bound surface, and the rest only when they change. Four colour targets and the depth
+// target are five words in a row.
+void NoteBoundSurfaces(u32 device) {
+  const auto *bound = GuestPtr<const be_u32>(device + native::off::RenderTargets);
+  for (u32 i = 0; i < 5; ++i) {
+    const u32 va = bound[i];
+    if (!va)
+      continue;
+    const u8 *header = GuestPtr<const u8>(va);
+    if (!header)
+      continue;
+    const u32 size = *reinterpret_cast<const be_u32 *>(header + 24);
+    const u32 info = *reinterpret_cast<const be_u32 *>(header + 48);
+    SeenSurface &seen = t_seen_surfaces[i];
+    if (seen.va == va && seen.size == size && seen.info == info)
+      continue;
+    seen = {va, size, info};
+    d3d::SurfaceDesc desc;
+    d3d::ReadSurfaceDesc(header, desc);
+    std::lock_guard lock(g_bound_surface_mutex);
+    BoundSurface &slot = BoundSurfaceSlot(va);
+    slot.sequence.fetch_add(1, std::memory_order_acq_rel);
+    slot.va.store(va, std::memory_order_relaxed);
+    slot.info.store(desc.SurfaceInfo, std::memory_order_relaxed);
+    slot.color.store(desc.ColorInfo, std::memory_order_relaxed);
+    slot.hi.store(desc.HiControl, std::memory_order_relaxed);
+    slot.size.store(desc.Size, std::memory_order_relaxed);
+    slot.format.store(desc.Format, std::memory_order_relaxed);
+    slot.edram.store(desc.EdramSize, std::memory_order_relaxed);
+    slot.sequence.fetch_add(1, std::memory_order_acq_rel);
+  }
+}
+
 // The device's first hook: the renderer learns it (the game's own Direct3D_CreateDevice made it).
 void NoteDevice(u32 device) {
   static std::atomic<u32> known{0};
@@ -159,6 +216,7 @@ void Prepare(u32 device) {
   const u32 declaration = Word(device + d3d::kGameDeviceVertexDeclaration);
   SetWord(device + d3d::kKameoDeclarationId, DeclarationIdOf(declaration));
   SyncStreams(device, declaration);
+  NoteBoundSurfaces(device);
 }
 
 bool ReadRect(u32 va, ClearRect &rect) {
@@ -193,6 +251,28 @@ VertexDeclarationRecord *KameoDeclarationById(u32 id) {
   return id < kMaxDeclarationIds ? g_declaration_by_id[id].load(std::memory_order_acquire) : nullptr;
 }
 }  // namespace renut::gpu
+
+namespace renut::gpu::d3d {
+bool BoundSurfaceDesc(u32 surface_va, SurfaceDesc &out) {
+  BoundSurface &slot = BoundSurfaceSlot(surface_va);
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const u32 before = slot.sequence.load(std::memory_order_acquire);
+    if (before & 1)
+      continue;
+    if (slot.va.load(std::memory_order_relaxed) != surface_va)
+      return false;
+    out.SurfaceInfo = slot.info.load(std::memory_order_relaxed);
+    out.ColorInfo = slot.color.load(std::memory_order_relaxed);
+    out.HiControl = slot.hi.load(std::memory_order_relaxed);
+    out.Size = slot.size.load(std::memory_order_relaxed);
+    out.Format = slot.format.load(std::memory_order_relaxed);
+    out.EdramSize = slot.edram.load(std::memory_order_relaxed);
+    if (slot.sequence.load(std::memory_order_acquire) == before)
+      return true;
+  }
+  return false;
+}
+}  // namespace renut::gpu::d3d
 
 // From Kameo: RePowered's src/engine/render_guards.cpp (MaxDeadBear, BiRabittoh; MIT): depthEffects_render's `lwzx r8, table[idx];
 // mtctr r8; bctrl` (app/config/renut_hooks.toml): after a change of viewport count the index can read flag words past the

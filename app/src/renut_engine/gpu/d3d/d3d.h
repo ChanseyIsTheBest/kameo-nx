@@ -383,6 +383,13 @@ inline bool ReadSurfaceDesc(const u8 *surface, SurfaceDesc &out) {
   return true;
 }
 
+// kameo-nx: the surface as the game thread read it when a draw last bound it (hooks/kameo_d3d.cpp): by the time the render
+// thread replays that draw, a temporary surface's header may be freed and its memory reused.
+bool BoundSurfaceDesc(u32 surface_va, SurfaceDesc &out);
+inline bool SurfaceDescOf(u32 surface_va, const u8 *surface, SurfaceDesc &out) {
+  return BoundSurfaceDesc(surface_va, out) || ReadSurfaceDesc(surface, out);
+}
+
 inline u32 SurfaceWidth(u32 size) {
   return ((size >> 18) & 0x3FFF) + 1;
 }

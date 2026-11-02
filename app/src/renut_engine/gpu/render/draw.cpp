@@ -7565,7 +7565,7 @@ void SurfaceDescWords(u32 va, u32 out[3]) {
   if (!va)
     return;
   d3d::SurfaceDesc desc_value;  // kameo-nx
-  if (d3d::ReadSurfaceDesc(GuestPtr<const u8>(va), desc_value)) {
+  if (d3d::SurfaceDescOf(va, GuestPtr<const u8>(va), desc_value)) {
     const d3d::SurfaceDesc *const desc = &desc_value;
     out[0] = desc->Size;
     out[1] = desc->SurfaceInfo;

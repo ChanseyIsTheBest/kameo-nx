@@ -49,6 +49,9 @@ SHIPPED = {
     'banjo_renut_portrait_msaa_samples': '0',
     # The display's gamma ramp the game loads: without it the picture is darker than the reference (docs/kameo-notes.md).
     'banjo_renut_game_gamma': 'true',
+    # Kameo's level geometry: the PC's cache reached 234.5 MB in Thorn's Castle; at the base's 128 MB, emu4prof counted
+    # "index cache full 14367" and the draws fell back to range copies converted every frame (under 2 fps). Exact either way.
+    'banjo_renut_stream_cache_mb': '256',
 }
 PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders': 'false',
         'banjo_renut_diag_terrain': 'false'}
