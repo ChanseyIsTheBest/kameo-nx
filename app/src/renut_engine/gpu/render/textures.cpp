@@ -74,6 +74,11 @@ std::unordered_map<u32, HostTexture *> g_depth_words;
 // textures are views of memory, and a game may resolve through one header and
 // sample the same memory through another.
 std::unordered_map<u32, HostTexture *> g_resolve_targets;
+// kameo-nx (2026-11-02): where each resolve destination lives, by the data it holds (fetch dwords 1 and 2: memory, format,
+// endianness, size). Kameo resolves depth and then colour into one page every frame (0FDED096 and 0FDED086), through a new
+// temporary header each time, so g_resolve_targets' one entry a page was never the one wanted and every resolve made a
+// target: 3,367 of them, 11.8 GB, in five minutes of the first level.
+std::unordered_map<uint64_t, u32> g_resolve_homes;
 std::unordered_map<uint64_t, uint32_t> g_samplers;  // sampler key -> slot
 std::vector<std::unique_ptr<plume::RenderSampler>> g_sampler_objects;
 uint64_t g_frame = 1;
@@ -662,8 +667,10 @@ void Retire(HostTexture &t) {
     t.words.reset();
     std::erase_if(g_depth_words, [&t](const auto &entry) { return entry.second == &t; });
   }
-  if (t.render_target)
+  if (t.render_target) {
     std::erase_if(g_resolve_targets, [&t](const auto &entry) { return entry.second == &t; });
+    std::erase_if(g_resolve_homes, [&t](const auto &entry) { return entry.second == t.guest_va; });
+  }
 }
 
 // Two descriptions of the same data: the same memory, format, endianness, size
@@ -677,12 +684,25 @@ bool SameData(const u32 a[6], const u32 b[6]) {
 // The resolve destination another header wrote this texture's memory through,
 // when it holds the same data (SameData). Only the GPU has what the resolve
 // wrote.
+HostTexture *ResolveHome(const u32 desc[6]) {
+  auto it = g_resolve_homes.find(uint64_t(desc[1]) << 32 | desc[2]);
+  if (it == g_resolve_homes.end())
+    return nullptr;
+  auto found = g_textures.find(it->second);
+  if (found == g_textures.end() || !found->second || !found->second->render_target || !found->second->texture ||
+      !SameData(found->second->desc, desc))
+    return nullptr;
+  return found->second.get();
+}
+
 HostTexture *ResolvedAlias(u32 texture_va, const TextureFetch &fetch, const u32 desc[6]) {
   auto it = g_resolve_targets.find(fetch.BasePage());
   if (it == g_resolve_targets.end())
     return nullptr;
   HostTexture *resolved = it->second;
-  if (resolved->guest_va == texture_va || !resolved->texture)
+  if (!SameData(resolved->desc, desc))
+    resolved = ResolveHome(desc);  // kameo-nx: the page's other resolve destination
+  if (!resolved || resolved->guest_va == texture_va || !resolved->texture)
     return nullptr;
   return SameData(resolved->desc, desc) ? resolved : nullptr;
 }
@@ -776,6 +796,14 @@ HostTexture *ResolveTarget(u32 texture_va, plume::RenderFormat format, RenderSca
   u32 desc[6];
   MaskedDesc(fetch, desc);
 
+  // kameo-nx (2026-11-02): Kameo builds a new header for a resolve destination every frame (a temporary at a new address,
+  // over the same memory). A destination is its data: another header of it takes the target that data already has
+  // (RePowered's ResolveKey is the address, format and size too).
+  if (HostTexture *home = ResolveHome(desc)) {
+    texture_va = home->guest_va;
+    std::memcpy(desc, home->desc, sizeof(desc));
+  }
+
   auto &slot = TextureSlot(texture_va);
   // banjo-nx (2026-10-28, night_gpu5, dynamic resolution steps): a destination of a settable code made at another
   // height of it (render/surfaces.cpp CodeForHeightLocked) is made again: its size is the old height's.
@@ -789,6 +817,12 @@ HostTexture *ResolveTarget(u32 texture_va, plume::RenderFormat format, RenderSca
     slot = std::make_unique<HostTexture>();
     slot->guest_va = texture_va;
     std::memcpy(slot->desc, desc, sizeof(desc));
+    {
+      static uint32_t logged = 0;  // kameo-nx: what the game resolves into
+      if (logged++ < 48)
+        RGPU_INFO("[kameo] resolve destination {:08X} page {:08X} frame {}: desc {:08X} {:08X} {:08X} {:08X} {:08X} {:08X}",
+                  texture_va, fetch.BasePage(), g_frame, desc[0], desc[1], desc[2], desc[3], desc[4], desc[5]);
+    }
     // A depth destination has one component, which the swizzle places.
     if (!Create(*slot, fetch, true, format, !depth && (fetch.Swizzle() & 7) != 0, scale, !depth)) {
       RGPU_ERROR("Resolve destination {:08X}: {}x{} target creation failed", texture_va,
@@ -806,6 +840,7 @@ HostTexture *ResolveTarget(u32 texture_va, plume::RenderFormat format, RenderSca
   slot->gpu_written = true;
   slot->uploaded = true;
   slot->used_frame = g_frame;
+  g_resolve_homes[uint64_t(desc[1]) << 32 | desc[2]] = texture_va;
   HostTexture *&entry = g_resolve_targets[fetch.BasePage()];
   if (entry != slot.get()) {
     entry = slot.get();
