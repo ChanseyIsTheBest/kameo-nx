@@ -16,29 +16,40 @@ above the player are denser than in the reference: the game places them by frame
 
 Ryujinx had a bug that made metal in the hole in the wall look mottled lilac. It was in Ryujinx's shader translator, not this build, and
 is fixed in the Ryujinx on this PC. A console should not show it: if that metal looks mottled on your console, tell me, because then
-this reading is wrong (banjo_gpu_output_trim = false in renut.toml would be the first test).
+this reading is wrong (banjo_gpu_output_trim = false in kameo.toml would be the first test).
 
 No model or level in the game or its DLC uses the tessellated draw command, so banjo-nx's tessellation work is not in this port. If a
 later level is missing geometry, tell me where: that scan does not cover draws built directly in code.
 
 Setting up
 ----------
+A package made with -Ready has a switch folder holding everything: copy it to the root of the SD card, merging with the card's
+switch folder, and start kameo-nx from the homebrew menu. About 5.6 GB, and about 90 MB more when the DLC installs at the first
+start. Otherwise:
 1. Copy COPY_TO_SD_switch_kameo-nx to sdmc:/switch/kameo-nx/ .
 2. game_root/: your extracted disc, with title update 2's default.xexp next to default.xex.
 3. update/: title update 2's language folders (English, French ...).
 4. dlc/ (optional): the four DLC packages as they came, one copy of the Add-On Pack. Installed at the first start.
-5. Start the NRO. renut.toml is read if it is there; kameo.toml holds the player's options and is written if missing.
+5. Start the NRO.
+
+deko3d_shaders.bin and pipeline_list.bin, in a -Ready package, come from the emulator's runs of this NRO: the compiled shaders
+it has met so far, and the pipelines to build ahead. They only save compile time. Delete either to start it over; shaders it
+lacks are compiled as they come.
 
 Which toml
 ----------
-renut.toml        shipped settings, logs and diagnostics on: use this first.
+The NRO reads only kameo.toml, over its built-in settings. (These notes used to say renut.toml: that file does nothing.) The
+one here is configs/renut.toml. To use another, copy it from configs/ over kameo.toml.
+renut.toml        shipped settings, logs and diagnostics on: use this first. It is what the emulator tests ran, plus their test keys.
 renut_play.toml   the same with the render-thread diagnostics off, for playing.
 renut_ab.toml     the in-run A/B list, 30 s halves, target 1 as a do-nothing control. A round is 9 minutes and the list starts
                   at boot, so the first round lands partly on menus and loading: get into gameplay, stand still in one place
                   for 25 minutes or more, and send logs/renut_001.log. The "[renut A/B]" lines give each target; read them
                   against target 1's spread. In the emulator that spread was 3 ms, and no target could be judged.
-configs/          renut_verify.toml (slow; every verify key), renut_profile.toml (sampling profile), renut_pgo.toml, and the
+The others        renut_verify.toml (slow; every verify key), renut_profile.toml (sampling profile), renut_pgo.toml, and the
                   options that change the picture, each one key away from renut.toml, for you to decide on.
+No kameo.toml     delete it and the NRO writes a short one with the player's options (language, buttons, frame cap) and runs on the
+                  built-in settings: the same picture settings as renut.toml, with no log. Not run in the emulator with this NRO.
 
 What to test, in order
 ----------------------
@@ -47,7 +58,7 @@ What to test, in order
 3. Sound in the movie and in gameplay.
 4. Frame rate in Thorn's Castle, handheld (720 lines) and docked (1080 lines). Docked at 1080 has not been run at all.
 5. A DLC outfit, if the DLC is installed. Never selected in a test so far; Expert no longer refuses for the Power Pack.
-6. A 25-minute stay in one place with renut_ab.toml. Target 71 is the question for you: Begin*Vertices draws in the delta chain,
+6. A 25-minute stay in one place with configs/renut_ab.toml copied over kameo.toml. Target 71 is the question for you: Begin*Vertices draws in the delta chain,
    on here and off in banjo-nx. It removes about 12 MB/s of memcpy from the drawing thread on the PC, and could not be measured
    in the emulator. Target 72 is new: its off half loses the glow on the clouds and should cost almost nothing to keep on.
 7. The sky through the window in Thorn's Castle, the first thing to compare against a real 360 or the reference: orange bands on the
@@ -56,12 +67,12 @@ What to test, in order
 Things most likely to go wrong
 ------------------------------
 - banjo_renut_deferred_chain is ON here, against banjo-nx's default, because Kameo has one device. It hung banjo-nx's emulator
-  when there were two. If the game freezes after some minutes, set it to false in renut.toml and tell me whether that cured it.
+  when there were two. If the game freezes after some minutes, set it to false in kameo.toml and tell me whether that cured it.
 - GPU memory: the region peaked at 963 MB in the emulator at 720 lines. 1080 docked will use more; the log's "Memory:" lines
   every 10 s say how much.
 
 Turning on a console profile
 ----------------------------
-Copy configs/renut_profile.toml over renut.toml, play the slow scene for a few minutes, and send logs/rex/rex_profile.log, the
+Copy configs/renut_profile.toml over kameo.toml, play the slow scene for a few minutes, and send logs/rex/rex_profile.log, the
 log, and this package's name. kameo-nx.elf and source_<commit>.tgz here are what maps its samples to source lines: keep them
 with the NRO. Hand-written natives wait for this profile; none are in this build.

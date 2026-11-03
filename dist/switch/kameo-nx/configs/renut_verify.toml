@@ -1,5 +1,5 @@
 # kameo-nx (Kameo: Elements of Power on the Switch, Renut's renderer on deko3d): every Renut verify mode on (emulator / test runs: slow; the log's verify lines must count 0 differences)
-# Made by tools/make_kameo_tomls.py from katamari-nx's shipped renut.toml. Copy to sdmc:/switch/kameo-nx/renut.toml.
+# Made by tools/make_kameo_tomls.py from katamari-nx's shipped renut.toml. Copy over sdmc:/switch/kameo-nx/kameo.toml, the file the NRO reads.
 # Credits: reNut's renderer (masterspike52, reuse permitted), Kameo: RePowered (MaxDeadBear, BiRabittoh; MIT), katamari-nx,
 # banjo-nx, sa2-nx, NetherSX2_nx (four-core layout), battd_nx (the GPU arena), bejeweled3-nx and the zuma ports.
 # banjo-nx test config (Switch). Lines are cvars.
