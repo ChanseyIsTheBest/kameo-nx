@@ -132,7 +132,7 @@ struct GameGamma {
   // Render thread.
   uint32_t uploaded = 0;
   uint32_t uploads = 0;  // kameo-nx (2026-11-03, banjo_renut_gamma_upload_once): copies of the ramp so far
-  std::unique_ptr<plume::RenderTexture> texture;  // 256 x 1, RGBA8 (kameo-nx: PrepareGameGammaLocked)
+  std::unique_ptr<plume::RenderTexture> texture;  // 256 x 3, R32F: a row per channel (kameo-nx: PrepareGameGammaLocked)
   std::unique_ptr<plume::RenderTextureView> view;
   uint32_t slot = kInvalidDescriptor;
   float param = 0.0f;  // UtilityPush::param1 of the scan-outs: the slot as raw bits, 0 = no ramp
@@ -153,12 +153,13 @@ void PrepareGameGammaLocked(VideoState &s) {
   }
   if (!version || !Video::EnsureCommandListLocked())
     return;
-  // kameo-nx (2026-11-03): 8 bits, not 32-bit floats: a quarter of the bytes for each of a pixel's three fetches. Each entry
-  // is what the 8-bit swapchain would make of its float: n / 1023 is never nearer an 8-bit rounding tie than 0.0014 of a
-  // level (checked for all 1024 values), so round() and the render output agree.
-  constexpr plume::RenderFormat kFormat = plume::RenderFormat::R8G8B8A8_UNORM;
+  // kameo-nx (2026-11-03): a row of one 32-bit float per channel, not four to a texel: a quarter of the bytes for each of a
+  // pixel's three fetches, and the same floats. Not 8-bit levels computed here: that was tried, and three entries near a
+  // rounding tie came out a level lower than the float does through the render output (emu56gpu against emu54gpu: every
+  // capture's level 163 became 160, in all channels). The GPU's own conversion stays the one that rounds them.
+  constexpr plume::RenderFormat kFormat = plume::RenderFormat::R32_FLOAT;
   if (!g_gamma.texture) {
-    g_gamma.texture = s.device->createTexture(plume::RenderTextureDesc::Texture2D(256, 1, 1, kFormat));
+    g_gamma.texture = s.device->createTexture(plume::RenderTextureDesc::Texture2D(256, 3, 1, kFormat));
     if (!g_gamma.texture)
       return;
     g_gamma.texture->setName("banjo game gamma ramp");
@@ -179,25 +180,17 @@ void PrepareGameGammaLocked(VideoState &s) {
   const bool upload = !banjo::renut_gpu::GammaUploadOnceOn() || g_gamma.uploaded != version || g_gamma.uploads < 300;
   if (upload) {
     ++g_gamma.uploads;
-    UploadAllocation staging = s.uploads[s.frame].Allocate(256 * 4, 512);
+    UploadAllocation staging = s.uploads[s.frame].Allocate(256 * 3 * 4, 512);
     if (!staging)
       return;
-    auto *texels = static_cast<uint8_t *>(staging.cpu);
-    // round(entry * 255 / 1023); an entry over 1023 was over 1.0 as a float, which the 8-bit output clamps.
-    const auto level = [](uint16_t entry) {
-      return uint8_t((std::min<uint32_t>(entry, 1023u) * 510u + 1023u) / 2046u);
-    };
-    for (uint32_t i = 0; i < 256; ++i) {
-      texels[i * 4 + 0] = level(ramp[i]);
-      texels[i * 4 + 1] = level(ramp[256 + i]);
-      texels[i * 4 + 2] = level(ramp[512 + i]);
-      texels[i * 4 + 3] = 255;
-    }
+    auto *texels = static_cast<float *>(staging.cpu);
+    for (uint32_t i = 0; i < 768; ++i)  // red, green and blue, as the ramp holds them
+      texels[i] = float(ramp[i]) / 1023.0f;
     plume::RenderCommandList *cmd = s.command_list;
     cmd->barriers(plume::RenderBarrierStage::COPY,
                   plume::RenderTextureBarrier(g_gamma.texture.get(), plume::RenderTextureLayout::COPY_DEST));
     cmd->copyTextureRegion(plume::RenderTextureCopyLocation::Subresource(g_gamma.texture.get(), 0, 0),
-                           plume::RenderTextureCopyLocation::PlacedFootprint(staging.ref.ref, kFormat, 256, 1, 1, 256,
+                           plume::RenderTextureCopyLocation::PlacedFootprint(staging.ref.ref, kFormat, 256, 3, 1, 256,
                                                                              staging.ref.offset),
                            0, 0, 0, nullptr);
     cmd->barriers(plume::RenderBarrierStage::GRAPHICS,
