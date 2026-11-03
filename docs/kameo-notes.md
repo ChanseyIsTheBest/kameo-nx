@@ -364,6 +364,19 @@ What differs from RePowered, which is written against the original game:
 
 **Tested: not yet.** It compiles, and `nm` finds the eight hooks and the flag in the binary. No run has entered a code: `emu60codes` and `emu61codes` used up their time before the script's first Start (the script's clock runs at about a third of the wall's in gameplay on this loaded machine), and the user chose to test on the console, so `emu62codes` was stopped. The scripted test is in `out/emu/emu_codes.toml` if it is wanted: gameplay is on screen by 160 s of the script's clock, so allow over 20 minutes.
 
+## Point sprites (found 2026-11-04, not fixed)
+
+Reported by the Beautiful Katamari session, then checked here. **Kameo's point sprites are probably wrong on every backend, for two separate reasons, and neither is fixed.**
+
+1. **The geometry shaders' layout.** XenosRecomp has FOG0 (katamari-nx a0268462), so vertex and pixel shaders put fog at location 23, the point coordinate at 24 and the size at 25. `point_sprite_gs.hlsl` and `rectangle_list_gs.hlsl` still have the coordinate at 23 and the size at 24. So `point_sprite_gs` reads the size from the vertex shader's coordinate (always 0, so the render state's size is used, and a killed point is not dropped). On D3D12 the stages do not link: `out/pc_runs/verify1` and `verify5` log "Pipeline creation failed" for VS 04D58836F1C8402F, PS 84162BFF585D487A, topology 1. Deko3D reports nothing. Fog itself is harmless here: every vertex shader writes it as 0 and no pixel shader reads it.
+2. **The pixel shaders never receive the coordinate.** Vivapinata-nx 952a38c2 fixes (1) only, which is not enough for Kameo. The sprite pixel shaders sample at `abs(r).zw`, and the optimised GLSL has that as `abs(vec4(0.0)).zw`, one fixed texel. The recompiler only sets up the generated register when `fieldC & 6` is nonzero. These shaders have `fieldC` 0x200 or 0x100: neither low bit, but the register byte names the first free register after the interpolators. Across the shader dump, 4 pixel shaders have that pattern, including all three of RePowered's.
+
+The shaders: RePowered lists three pairs (`src/gpu/shaders/embedded_shaders.cpp`): dust mote 67EDA3D674722EC6 + 9A16289A84E5A85B, water cannon spray 511A3E3E3F0761D3 + E1D5926C5F6332C6, dust mote burst 04D58836F1C8402F + 84162BFF585D487A. A fourth vertex shader here writes a real size, 519FBEC688E43106; it is not in RePowered's list and its pixel shader is unknown. RePowered replaces all three pairs with its own shaders, and notes that without them the points draw one pixel wide and the effect reads as missing.
+
+Not established: how these look on the console or how often they draw. The soft round dots in the opening tower look right at 3x zoom, so they are probably a different effect. No side-by-side has been done against the reference.
+
+The likely fix: the two `.hlsl` files as in vivapinata-nx 952a38c2, plus treating a nonzero register byte as the generated register in XenosRecomp, then rebuilding those pixel shaders and the deko3d cache. It would change the picture of those effects, towards the original. Untested on deko3d.
+
 ## Enhancements audit (2026-11-02)
 
 `tools/enhancement_gap.py` and `tools/enhancement_state.py` against banjo-nx's `enhancements-reference.md`: 260 keys there, 245 defined here; of the 139 rows of "Every key", 135 ship as the reference does.
