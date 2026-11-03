@@ -17,6 +17,7 @@ struct Vertex
     float4 normal[3] : NORMAL0;
     float4 tangent : TANGENT0;
     float4 binormal : BINORMAL0;
+    float4 fog : FOG0;  // kameo-nx (2026-11-04, from vivapinata-nx 952a38c2): XenosRecomp's FOG0 moved the coordinate and size up one
     float2 pointCoord : POINTCOORD;
     float pointSize : POINTSIZE;
 };

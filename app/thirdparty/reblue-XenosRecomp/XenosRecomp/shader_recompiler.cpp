@@ -2498,7 +2498,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
             // sparkles have only that); usually both, 6. With neither the register byte is
             // meaningless (0). With bit 2 alone it can also be 0 when r0 is an interpolator,
             // which the printed check above skips.
-            if (isPixelShader && (shader->fieldC & 0x6) != 0 && i == ((shader->fieldC >> 8) & 0xFF))
+            // kameo-nx (2026-11-04): Kameo's sprites (dust motes, water cannon spray) have neither bit with the register
+            // byte set, 1 or 2, the first register after their interpolators: 4 of its 4,490 pixel shaders, none of which
+            // writes that register first. They read its zw, which was left at zero: one fixed texel.
+            if (isPixelShader && ((shader->fieldC & 0x6) != 0 || ((shader->fieldC >> 8) & 0xFF) != 0) &&
+                i == ((shader->fieldC >> 8) & 0xFF))
             {
                 // xy the pixel position (x negated on back faces), zw the point sprite coordinate.
                 // The position is in guest pixels: the host targets are g_ResolutionScale times

@@ -3,7 +3,21 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: Kameo: RePowered's four cheat codes. Nothing else changed since rc8.
+New in this package: point sprites are fixed. Nothing else changed since rc9.
+
+Kameo's dust motes, the burst of motes and the water cannon's spray were drawn at the wrong size and sampled one fixed texel of their texture. They should now look right. This changes the picture of those effects, towards the original.
+
+What is known: on the emulator a test build showed the sprites at about 5 pixels with the coordinate running the right way across them. What is not known: no run has shown the real effects in a scene where they are dense, so yours is the first real look.
+
+What to look for:
+- The water cannon warrior's spray. It should be a spray of soft particles.
+- The burst of motes around Kameo when she absorbs a baby warrior.
+- Clouds of drifting dust motes. RePowered's notes put 40,000 of them in one area it calls the basin. Look at the frame rate there too: the sprites now cover their real size, so that scene costs more than it did. Not measured.
+- Anything that looks wrong and did not before: big squares or flat-coloured blocks would mean a problem with this fix. kameo.toml has no switch for it.
+
+Also new, please tell me if you ever see it: the game can stop at boot on its own page, "There's a problem with the disc you're using". It happened in 2 emulator runs I have screenshots of, cause unknown, and the next boots were fine. If it happens on the console, restart and send me renut_001.log.
+
+From rc9, and still untested as far as I know: Kameo: RePowered's four cheat codes.
 
 NOT TESTED. No run has reached them: the emulator test was stopped before its first press, because you are testing them on the console.
 The code compiles and the hooks are in the binary. That is all that is known. A wrong address would show up here first.
