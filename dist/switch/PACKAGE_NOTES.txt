@@ -3,16 +3,21 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package, all from your second console run (docs/console-run-2-2026-11-03.md in the source):
-- The fourth core is on by default: only the Audio Worker and the shader compiler, the compiler held to 10 % of it. The XMA Decoder and the audio
-  output stay on the other three. It needs a forwarder (Cores, below): from the homebrew menu you still get three.
-- Hand work on the five functions you listed: natives for the bone matrices (banjo_hand_matrix), tighter skip loops in sub_82379E10 and
-  sub_82524E98, and fewer register hand-overs in the command interpreter, sub_820E7F10. I found nothing to remove in sub_82110280 or
-  sub_8231C268. My estimate is about 1 ms of the drawing thread's 38 ms, not a measurement: my last estimate of this kind was too high.
-- Still 999 machine copies, about 68 MB. banjo_cpu_native_bulk = false in kameo.toml turns them all off.
+New in this package, from your third console run (docs/console-run-3-2026-11-03.md, docs/kameo-notes.md in the source):
+- Ten GPU changes, none meant to change a pixel: colour resolves left in the target's image (banjo_deko3d_color_handover), the frame's last
+  resolve scanned out with no copy (banjo_deko3d_scanout_handover), depth sampled while a draw only tests it (banjo_deko3d_depth_handover_sampled,
+  banjo_deko3d_depth_read_layout), the gamma ramp copied only when it changes (banjo_renut_gamma_upload_once), and in 8 bits, a cheaper scan-out
+  (banjo_renut_present_no_pow, banjo_renut_present_texel_load), a register cap on four shaders (banjo_deko3d_gpr32), and fewer target binds
+  (banjo_deko3d_resolve_keeps_target). Each is one key in kameo.toml, false to turn it off.
+- My estimate: about 1.5 ms of the GPU's 22 ms, not measured. The frame rate in handheld should not change: the drawing thread is the limit.
+- Also in here, from the last package: the fourth core and the hand work on the drawing thread. The hand work has now had its first real run
+  under the guard: 0 differences in 3.8 million compared calls. Three of those edits cannot be compared: sub_82524E98, sub_820E7F10, sub_820E5100.
 
-This NRO's emulator tests are in docs/progress-log.md. The emulator freeze seen on an earlier build under heavy load on the PC was not looked
-into further, at your request. If a console freezes: send logs/renut_001.log and logs/rex/banjo_profiler.log.
+Watch for: flickering or wrong shading on soft particles and fog, near where they meet geometry. That is depth being sampled while bound
+(banjo_deko3d_depth_handover_sampled = false turns it off), the change the emulator can check least, since it models neither depth compression
+nor Zcull. Tell me where it shows. A hitch or missing surface in a menu or a cutscene is the colour hand-over: banjo_deko3d_color_handover = false.
+
+The picture in the emulator: wall and lilac as before, every verify key 0 differ. That is not a proof of identical pixels: the scene animates.
 
 Cores
 -----

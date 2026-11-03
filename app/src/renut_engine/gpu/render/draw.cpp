@@ -1617,10 +1617,49 @@ struct Targets {
 // FillTextures binds (a destination is not sampled from the image of a target of its own draw), and what is done
 // before a depth target is bound again.
 const Targets *g_handover_targets = nullptr;
+// kameo-nx (2026-11-03, banjo_deko3d_depth_handover_sampled): the draw writes neither depth nor stencil, so it may sample a
+// resolve left in the image of its own depth target (HandOverBeforeDrawLocked sets it, before the draw's textures).
+bool g_handover_depth_readonly = false;
+// Whether a resolve left in 'source' cannot be sampled from there by the draw whose textures are being bound.
+inline bool HandOverSourceIsDrawTarget(const HostSurface *source) {
+  const Targets *t = g_handover_targets;
+  if (!t)
+    return false;
+  if (t->depth == source)
+    return !g_handover_depth_readonly;
+  for (uint32_t i = 0; i < t->color_count; ++i)
+    if (t->colors[i] == source)
+      return true;
+  return false;
+}
 void DepthHandOverBeforeBindLocked(HostSurface *surface, const plume::RenderRect *clear_rect, u32 clear_flags);
 // banjo-nx (2026-10-28, GPU block, diagnostic): why the next MaterialiseLocked draws (the hand-over line's causes): 7 a
 // bind for a draw writing depth or stencil, 8 a draw sampling it with its target bound, 9 other.
 int g_materialise_cause = 9;
+
+// kameo-nx (2026-11-03, banjo_deko3d_color_handover, banjo_deko3d_depth_handover_sampled): before a draw looks at its
+// textures. A colour target holding a resolve left in its image, or a depth target when the draw writes depth or stencil,
+// gets that resolve drawn now, so the texture is its own by the time the draw binds it and no answer kept from an earlier
+// draw can name the image the draw is about to write. Otherwise a depth target's image can be sampled while it is only
+// tested. The same words as FastDrawLocked's and the full path's depth writes (the raw device's: a superset of the key's).
+[[gnu::always_inline]] inline void HandOverBeforeDrawLocked(const Targets &t, u32 depth_control, u32 stencil_ref_mask) {
+  const bool writes = ((depth_control & 2) && (depth_control & 4)) ||
+                      ((depth_control & 1) && ((stencil_ref_mask >> 16) & 0xFF) != 0);
+  const bool sampled = banjo::renut_gpu::DepthHandOverSampledOn();
+  g_handover_depth_readonly = sampled && !writes;
+  for (uint32_t i = 0; i < t.color_count; ++i) {
+    if (t.colors[i]->handed) [[unlikely]] {
+      g_materialise_cause = 7;
+      DepthHandOverBeforeBindLocked(t.colors[i], nullptr, 0);
+      g_materialise_cause = 9;
+    }
+  }
+  if (sampled && writes && t.depth && t.depth->handed) [[unlikely]] {
+    g_materialise_cause = 7;
+    DepthHandOverBeforeBindLocked(t.depth, nullptr, 0);
+    g_materialise_cause = 9;
+  }
+}
 
 // A rect in guest pixels as host pixels of targets 'scale' times the size.
 plume::RenderRect ScaleRect(const plume::RenderRect &rect, RenderScale scale) {
@@ -1748,6 +1787,12 @@ uint32_t ShaderProfileLabel(const Targets &t, const ShaderRecord *ps, const Pipe
 
 // banjo-nx (2026-10-28, GPU block): 'depth_writes': the draw it binds for writes depth or stencil (a clear's binds do).
 bool BindTargets(const Targets &t, bool depth_writes = true) {
+  // kameo-nx (2026-11-03, banjo_deko3d_color_handover): a colour target holding a resolve left in its image; a whole clear
+  // has given the image to the destination by now (ClearTargets), and a draw has drawn it (HandOverBeforeDrawLocked).
+  for (uint32_t i = 0; i < t.color_count; ++i) {
+    if (t.colors[i]->handed) [[unlikely]]
+      DepthHandOverBeforeBindLocked(t.colors[i], nullptr, 0);
+  }
   if (t.depth && t.depth->handed) {
     // banjo-nx (2026-10-28, banjo_deko3d_depth_handover_readonly): a draw that writes neither leaves the image as the
     // resolve read it ('writes', which the hand-over checks, moves only for those): the resolve stays left out.
@@ -1765,7 +1810,11 @@ bool BindTargets(const Targets &t, bool depth_writes = true) {
     gpu_profile::Mark(State(), TargetsProfileLabel(t));
   for (uint32_t i = 0; i < t.color_count; ++i)
     TransitionSurfaceLocked(t.colors[i], plume::RenderTextureLayout::COLOR_WRITE);
-  if (t.depth)
+  // kameo-nx (2026-11-03, banjo_deko3d_depth_read_layout): a draw that writes neither depth nor stencil leaves a depth target
+  // that was just sampled as it is: its image does not change, so nothing waits and no read after it needs its caches
+  // dropped. A draw that writes comes back here (FastDrawLocked: the target's layout is one of the bind's reasons).
+  if (t.depth && (depth_writes || t.depth->layout != plume::RenderTextureLayout::SHADER_READ ||
+                  !banjo::renut_gpu::DepthReadLayoutOn()))
     TransitionSurfaceLocked(t.depth, plume::RenderTextureLayout::DEPTH_WRITE);
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_chain_reuse): the last bind's framebuffer again for the same surfaces while no target
   // was built, retired or rebound (their generations with it) and no framebuffer retired: GetFramebufferLocked would
@@ -3103,7 +3152,7 @@ inline bool SlotLastHolds(const SlotLast &l, u32 va, const TextureFetch &fetch, 
          (!l.fx.depth_source || l.depth_epoch == g_depth_epoch) &&
          SameBytes<24>(l.device, fetch.dword) &&
          SameBytes<24>(l.header, &header->Format) &&
-         !(l.fx.handover_surface && g_handover_targets && g_handover_targets->depth == l.fx.handover_surface);
+         !(l.fx.handover_surface && HandOverSourceIsDrawTarget(l.fx.handover_surface));
 }
 
 // banjo-nx (2026-10-27, Phase A): the draw's objects when they apply (FillTextures), and the dimension the slot's
@@ -3454,7 +3503,7 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
         (!m.fx.depth_source || m.depth_epoch == g_depth_epoch) &&
         SameBytes<24>(m.device, fetch.dword) &&
         SameBytes<24>(m.header, &header->Format) &&
-        !(m.fx.handover_surface && g_handover_targets && g_handover_targets->depth == m.fx.handover_surface)) {
+        !(m.fx.handover_surface && HandOverSourceIsDrawTarget(m.fx.handover_surface))) {
       // banjo-nx (2026-10-23): the call only when it can change something (it returns at once for a texture in the
       // layout already).
       for (HostTexture *t : m.fx.transition)
@@ -3482,7 +3531,7 @@ void FillTextures(const GuestDevice &device, u32 fetch_mask, SharedConstants &sc
     if (memo && m.va == texture_va && m.frame != TextureFrameLocked() && m.epoch == BindingEpoch(m.fx, fetch, texture_va) &&
         !m.fx.depth_source && SameBytes<24>(m.device, fetch.dword) &&
         SameBytes<24>(m.header, &header->Format) &&
-        !(m.fx.handover_surface && g_handover_targets && g_handover_targets->depth == m.fx.handover_surface) &&
+        !(m.fx.handover_surface && HandOverSourceIsDrawTarget(m.fx.handover_surface)) &&
         banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed) != 32 &&
         RefreshBindingLocked(texture_va, fetch, m.fx)) {
       m.frame = TextureFrameLocked();
@@ -8501,6 +8550,8 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
       DropSmallerDepth(device, gathered, vs->hash, device_ps ? device_ps->hash : 0);
   }
   const Targets &targets = targets_changed ? gathered : f.targets;
+  HandOverBeforeDrawLocked(targets, u32(device.dev().m_ControlPacket.DepthControl),
+                           u32(device.dev().m_ValuesPacket.StencilRefMask));
   // banjo-nx (2026-10-28, cache-miss audit 2): the targets' write counters the draw bumps at its end (a miss there).
   for (u32 i = 0; i < targets.color_count; ++i)
     __builtin_prefetch(&targets.colors[i]->writes);
@@ -9081,6 +9132,8 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
   if (targets_changed || !g_bound.framebuffer || g_bound.framebuffer != f.bound_framebuffer ||
       f.bind_layout_epoch != g_layout_epoch || f.framebuffer_epoch != FramebufferEpochLocked() ||
       (targets.depth && targets.depth->handed && (fast_depth_writes || !banjo::renut_gpu::DepthHandOverReadOnlyOn())) ||
+      // kameo-nx (2026-11-03, banjo_deko3d_depth_read_layout): a draw that writes a depth target left in the read layout.
+      (fast_depth_writes && targets.depth && targets.depth->layout != plume::RenderTextureLayout::DEPTH_WRITE) ||
       (gpu_profile::Timed() && !banjo::renut_gpu::DiagGpuShadersOn())) {
     if (!BindTargets(targets, fast_depth_writes))
       return -1;
@@ -10080,6 +10133,8 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   const u32 texture_mask =
       (vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
   g_fetch_3d_mask = Fetch3DMaskOf(vs, ps);  // kameo-nx (2026-11-03)
+  HandOverBeforeDrawLocked(targets, u32(device.dev().m_ControlPacket.DepthControl),
+                           u32(device.dev().m_ValuesPacket.StencilRefMask));  // kameo-nx (2026-11-03)
   g_handover_targets = &targets;  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_chain_reuse): the previous chain draw's texture and sampler words when FillTextures'
   // memo would answer every bound slot as it did then: the device's fetch constants and texture words unchanged
@@ -11450,6 +11505,11 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
   // banjo-nx (2026-10-19, banjo_deko3d_depth_handover): before the target is bound for the clear.
   if (t.depth && t.depth->handed)
     DepthHandOverBeforeBindLocked(t.depth, &rect, flags);
+  // kameo-nx (2026-11-03, banjo_deko3d_color_handover): a colour target this clear fills: bit 0 of 'clear_flags' is its own.
+  for (uint32_t i = 0; i < t.color_count; ++i) {
+    if (t.colors[i]->handed) [[unlikely]]
+      DepthHandOverBeforeBindLocked(t.colors[i], &rect, (flags >> i) & 1u);
+  }
   if (t.depth && (flags & 0x20))
     t.depth->stencil_used = true;
   if (!BindTargets(t))
@@ -11635,7 +11695,34 @@ bool ResolveDepth(HostSurface *surface, HostTexture *dest, const ClearRect &src,
 // to the target, which the clear then fills. The shadow maps are resolved once a frame, sampled by the scene and
 // cleared whole at the start of the next frame's shadow pass: they are never copied.
 
+// kameo-nx (2026-11-03, banjo_deko3d_color_handover): the same for a colour resolve (HostTexture::handed_color): whole,
+// single-sampled, the destination of the target's size and format, one level. A texel the destination would sample is the
+// texel of the target's image, through a view of the same format and the destination's mapping, because DrawResolveCopy
+// writes every texel back with its bits (its formats only). The resolve is drawn after all before a draw writes the target,
+// before anything other than a whole clear binds it, and before it goes. A whole clear of the target gives the image to the
+// destination instead: the render-to-texture loop's resolve-and-clear and the frame's last resolve are never copied.
+bool DrawResolveCopy(HostSurface *surface, HostTexture *dest, const plume::RenderRect &rect, uint32_t host_x,
+                     uint32_t host_y);
+bool ResolveCopyPossible(const HostSurface *surface, const HostTexture *dest);
+
 std::vector<HostTexture *> g_handed;  // destinations whose content is a target's current image
+
+void CountHanded(const HostTexture &d, int what) {
+  if (d.handed_color)
+    banjo::renut_gpu::CountColorHandOver(what);
+  else
+    banjo::renut_gpu::CountHandOver(what);
+}
+
+// The resolve left out, drawn from 'source' (the target, or the taken image as a target).
+bool DrawHandedResolveLocked(HostSurface *source, HostTexture &d, const ClearRect &src, bool words) {
+  if (!d.handed_color)
+    return ResolveDepth(source, &d, src, d.last_dest_x, d.last_dest_y, words);
+  if (!DrawResolveCopy(source, &d, plume::RenderRect(0, 0, int32_t(d.alloc_width), int32_t(d.alloc_height)), 0, 0))
+    return false;
+  TransitionTextureLocked(&d, plume::RenderTextureLayout::SHADER_READ);
+  return true;
+}
 
 void UnhandLocked(HostTexture &d) {
   if (!d.handed_from)
@@ -11656,13 +11743,13 @@ bool MaterialiseLocked(HostTexture &d, bool words) {
     const bool same = source->texture && source->generation == d.handed_generation &&
                       source->writes == d.handed_writes;
     UnhandLocked(d);
-    if (same && ResolveDepth(source, &d, src, d.last_dest_x, d.last_dest_y, words)) {
+    if (same && DrawHandedResolveLocked(source, d, src, words)) {
       d.words_current = words;
-      banjo::renut_gpu::CountHandOver(3);
-      banjo::renut_gpu::CountHandOver(g_materialise_cause);  // banjo-nx (2026-10-28, diagnostic)
+      CountHanded(d, 3);
+      CountHanded(d, g_materialise_cause);  // banjo-nx (2026-10-28, diagnostic)
       return true;
     }
-    banjo::renut_gpu::CountHandOver(5);
+    CountHanded(d, 5);
     return false;
   }
   if (!d.held || !d.held_current)
@@ -11673,19 +11760,19 @@ bool MaterialiseLocked(HostTexture &d, bool words) {
   image.width = d.width;
   image.height = d.height;
   image.scale = d.scale;
-  image.depth = true;
+  image.depth = !d.handed_color;
   image.format = d.held->format;
   image.samples = d.held->samples;
   image.format_word = d.held->format_word;
   SwapDepthImageLocked(image, *d.held);
-  const bool ok = ResolveDepth(&image, &d, src, d.last_dest_x, d.last_dest_y, words);
+  const bool ok = DrawHandedResolveLocked(&image, d, src, words);
   SwapDepthImageLocked(image, *d.held);
   if (ok) {
     d.words_current = words;
-    banjo::renut_gpu::CountHandOver(3);
-    banjo::renut_gpu::CountHandOver(4);
+    CountHanded(d, 3);
+    CountHanded(d, 4);
   } else {
-    banjo::renut_gpu::CountHandOver(5);
+    CountHanded(d, 5);
   }
   return ok;
 }
@@ -11696,11 +11783,21 @@ bool HandOverResolveLocked(HostSurface *s, HostTexture *d, const ClearRect &src,
                            bool words) {
   const bool whole = src.x1 == 0 && src.y1 == 0 && src.x2 == int32_t(s->width) && src.y2 == int32_t(s->height) &&
                      dest_x == 0 && dest_y == 0;
-  const bool can = IsDeko3D() && banjo::renut_gpu::DepthHandOverOn() && !words && whole && s->texture &&
+  const bool kind_on = s->depth ? banjo::renut_gpu::DepthHandOverOn() && !words
+                                : banjo::renut_gpu::ColorHandOverOn() && !banjo::renut_gpu::SmaaOn() &&
+                                      ResolveCopyPossible(s, d);
+  const bool can = IsDeko3D() && kind_on && whole && s->texture &&
                    s->samples == plume::RenderSampleCount::COUNT_1 && d->width == s->width &&
                    d->height == s->height && d->scale == s->scale && d->alloc_width == s->scale.Size(s->width) &&
                    d->alloc_height == s->scale.Size(s->height) && d->dimension == TextureDimension::Tex2D &&
                    !d->stacked && d->extra_levels == 0 && d->mip_levels == 1;
+  // kameo-nx (2026-11-03, diagnostic): why a colour resolve was drawn (the colour hand-over's 10 s line).
+  if (!can && !s->depth) {
+    const bool same_size = d->width == s->width && d->height == s->height && d->scale == s->scale;
+    banjo::renut_gpu::CountColorNotLeft(!whole ? (same_size ? 1 : 0) : !same_size ? 2
+                                        : d->extra_levels != 0 || d->mip_levels != 1 ? 3
+                                                                                     : 4);
+  }
   if (!can) {
     if (d->handed_from || d->held_current) {
       const bool covers = dest_x == 0 && dest_y == 0 && src.x2 - src.x1 >= int32_t(d->width) &&
@@ -11719,11 +11816,12 @@ bool HandOverResolveLocked(HostSurface *s, HostTexture *d, const ClearRect &src,
   d->handed_from = s;
   d->handed_generation = s->generation;
   d->handed_writes = s->writes;
+  d->handed_color = !s->depth;
   ++s->handed;
   g_handed.push_back(d);
   ++g_texture_epoch;
   BumpTextureBindings(*d);  // banjo-nx (2026-10-27)
-  banjo::renut_gpu::CountHandOver(0);
+  CountHanded(*d, 0);
   return true;
 }
 
@@ -11745,14 +11843,17 @@ bool TakeImageLocked(HostTexture &d, HostSurface &s) {
   d.held_current = true;
   ++g_texture_epoch;
   BumpTextureBindings(d);  // banjo-nx (2026-10-27)
-  banjo::renut_gpu::CountHandOver(2);
+  CountHanded(d, 2);
   return true;
 }
 
 void DepthHandOverBeforeBindLocked(HostSurface *surface, const plume::RenderRect *clear_rect, u32 clear_flags) {
   if (!surface || !surface->handed)
     return;
-  bool take = clear_rect && (clear_flags & 0x10) && ((clear_flags & 0x20) || !surface->stencil_used) &&
+  // A colour target: bit 0 of the flags says this clear fills it (ClearTargets); the clear writes all its channels.
+  const bool fills = surface->depth ? (clear_flags & 0x10) && ((clear_flags & 0x20) || !surface->stencil_used)
+                                    : (clear_flags & 1u) != 0;
+  bool take = clear_rect && fills &&
               clear_rect->left <= 0 && clear_rect->top <= 0 && clear_rect->right >= int32_t(surface->width) &&
               clear_rect->bottom >= int32_t(surface->height);
   std::vector<HostTexture *> holders;
@@ -11776,10 +11877,8 @@ void DepthHandOverBeforeBindLocked(HostSurface *surface, const plume::RenderRect
 // fences with a full barrier before and after (the 3D engine idle for the whole copy); a draw is ordered by the usual
 // fragment barriers and overlaps the work around it. Same format both sides, 2D level 0, slice 0: every texel is written
 // back bit for bit. 'rect' is the source rect and (host_x, host_y) its place in the destination, in host pixels.
-bool DrawResolveCopy(HostSurface *surface, HostTexture *dest, const plume::RenderRect &rect, uint32_t host_x,
-                     uint32_t host_y) {
-  auto &s = State();
-  if (!s.resolve_copy_ps || !dest->texture || !dest->render_target || dest->host_format != surface->format ||
+bool ResolveCopyPossible(const HostSurface *surface, const HostTexture *dest) {
+  if (!State().resolve_copy_ps || !dest->texture || !dest->render_target || dest->host_format != surface->format ||
       dest->dimension != TextureDimension::Tex2D || dest->stacked)
     return false;
   switch (surface->format) {  // formats a texel load gives back exactly when written as a colour
@@ -11796,10 +11895,17 @@ bool DrawResolveCopy(HostSurface *surface, HostTexture *dest, const plume::Rende
   case plume::RenderFormat::R32_FLOAT:
   case plume::RenderFormat::R32G32_FLOAT:
   case plume::RenderFormat::R32G32B32A32_FLOAT:
-    break;
+    return true;
   default:
     return false;
   }
+}
+
+bool DrawResolveCopy(HostSurface *surface, HostTexture *dest, const plume::RenderRect &rect, uint32_t host_x,
+                     uint32_t host_y) {
+  auto &s = State();
+  if (!ResolveCopyPossible(surface, dest))
+    return false;
   const uint32_t source_slot = SurfaceSampleSlotLocked(surface);
   if (source_slot == kInvalidDescriptor)
     return false;
@@ -11936,11 +12042,12 @@ uint32_t DepthHandOverSlotLocked(HostTexture &d, const plume::RenderComponentMap
   if (HostSurface *source = d.handed_from) {
     if (!source->texture || source->generation != d.handed_generation || source->writes != d.handed_writes) {
       UnhandLocked(d);
-      banjo::renut_gpu::CountHandOver(5);
+      CountHanded(d, 5);
       return UINT32_MAX;
     }
-    // Not the image of a target of the draw: its resolve is drawn after all.
-    if (g_handover_targets && g_handover_targets->depth == source) {
+    // Not the image of a target of the draw (a depth target it only tests is allowed: HandOverSourceIsDrawTarget): its
+    // resolve is drawn after all.
+    if (HandOverSourceIsDrawTarget(source)) {
       g_materialise_cause = 8;  // banjo-nx (2026-10-28, diagnostic)
       MaterialiseLocked(d, false);
       g_materialise_cause = 9;
@@ -11955,7 +12062,7 @@ uint32_t DepthHandOverSlotLocked(HostTexture &d, const plume::RenderComponentMap
     TransitionSurfaceLocked(source, plume::RenderTextureLayout::SHADER_READ);
     if (fx)
       fx->handover_surface = source;
-    banjo::renut_gpu::CountHandOver(1);
+    CountHanded(d, 1);
     return slot;
   }
   if (!d.held || !d.held_current)
@@ -11969,7 +12076,7 @@ uint32_t DepthHandOverSlotLocked(HostTexture &d, const plume::RenderComponentMap
   TransitionDepthImageLocked(image, plume::RenderTextureLayout::SHADER_READ);
   if (fx)
     fx->handover_image = &image;
-  banjo::renut_gpu::CountHandOver(1);
+  CountHanded(d, 1);
   return slot;
 }
 
@@ -11995,7 +12102,7 @@ void DepthHandOverBeforeRetireLocked(HostSurface *surface) {
       MaterialiseLocked(*d, false);
     } else {
       UnhandLocked(*d);
-      banjo::renut_gpu::CountHandOver(5);
+      CountHanded(*d, 5);
     }
   }
 }
@@ -12120,7 +12227,18 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
       if (fits && banjo::renut_gpu::ResolveSkipOn() && dest->resolve_signature == sig) {
         // banjo-nx (2026-10-19, banjo_renut_resolve_skip): the same resolve of an unchanged source is in dest already.
         banjo::renut_gpu::CountSkippedResolve(false);
+      } else if (fits && slice == 0 && z == 0 && dest_level == 0 &&
+                 HandOverResolveLocked(surface, dest, src, dest_x, dest_y, false)) {
+        // kameo-nx (2026-11-03, banjo_deko3d_color_handover): left in the target's image; the target stays bound
+        // (banjo_deko3d_resolve_keeps_target): nothing was drawn and no target changed.
+        dest->resolve_signature = sig;
+        if (!banjo::renut_gpu::ResolveKeepsTargetOn())
+          g_bound.framebuffer = nullptr;
       } else if (fits) {
+        // (Not left in the image: a destination holding other content has it back or no longer needs it, as the depth
+        // path's HandOverResolveLocked does; a level or slice of a stacked destination never holds any.)
+        if ((dest->handed_from || dest->held_current) && (slice != 0 || z != 0 || dest_level != 0))
+          MaterialiseLocked(*dest, false);
         dest->resolve_signature = sig;
         g_bound.framebuffer = nullptr;
         // The destination is of the surface's scale.
@@ -12336,6 +12454,28 @@ PresentImage FrontBufferImageLocked(u32 texture_va) {
   image.height = texture->alloc_height;
   image.source_width = texture->scale.Size(texture->width);
   image.source_height = texture->scale.Size(texture->height);
+  // kameo-nx (2026-11-03, banjo_deko3d_scanout_handover): the frame's last resolve left in the target's image is scanned out
+  // from there (or from the image the destination took): no copy of a whole frame to read it once. With the key off, or
+  // with no room for a view, it is drawn first and scanned out from the destination as before.
+  if ((texture->handed_from || texture->held_current) && Video::EnsureCommandListLocked()) {
+    HostSurface *const source = texture->handed_from;
+    DepthImage *const held = source ? nullptr : texture->held.get();
+    const uint32_t slot = banjo::renut_gpu::ScanOutHandOverOn()
+                              ? DepthHandOverSlotLocked(*texture, texture->view_desc.componentMapping, nullptr)
+                              : UINT32_MAX;
+    if (slot == UINT32_MAX) {
+      if (texture->handed_from || texture->held_current)
+        MaterialiseLocked(*texture, false);
+    } else if (source) {
+      image.texture = source->texture.get();
+      image.layout = &source->layout;
+      image.descriptor = slot;
+    } else {
+      image.texture = held->texture.get();
+      image.layout = &held->layout;
+      image.descriptor = slot;
+    }
+  }
   return image;
 }
 

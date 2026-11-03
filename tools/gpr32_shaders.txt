@@ -25,3 +25,9 @@ DC9896FB73A32F2A
 EA4C367F67309DCC
 EBDCD4E45414E36C
 F6EBD96A65CC9293
+# kameo-nx (2026-11-03): the third console run's pixel shaders over 32 GPRs whose code does not grow at 32 (uam, glsl_opt):
+# 39, 36, 40 and 40 GPRs; their GPU time is about 0.8 ms of 22. The heaviest two grow 5-9 % with memory spills: left out.
+1C9F38A0CCE5CDF6
+553A76B76E6DB923
+1CFDF6EE716976B1
+58C40F6F4EED6C75

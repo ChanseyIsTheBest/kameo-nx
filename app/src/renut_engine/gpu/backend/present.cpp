@@ -131,7 +131,8 @@ struct GameGamma {
   uint32_t version = 0;
   // Render thread.
   uint32_t uploaded = 0;
-  std::unique_ptr<plume::RenderTexture> texture;  // 256 x 1, RGBA32F
+  uint32_t uploads = 0;  // kameo-nx (2026-11-03, banjo_renut_gamma_upload_once): copies of the ramp so far
+  std::unique_ptr<plume::RenderTexture> texture;  // 256 x 1, RGBA8 (kameo-nx: PrepareGameGammaLocked)
   std::unique_ptr<plume::RenderTextureView> view;
   uint32_t slot = kInvalidDescriptor;
   float param = 0.0f;  // UtilityPush::param1 of the scan-outs: the slot as raw bits, 0 = no ramp
@@ -152,7 +153,10 @@ void PrepareGameGammaLocked(VideoState &s) {
   }
   if (!version || !Video::EnsureCommandListLocked())
     return;
-  constexpr plume::RenderFormat kFormat = plume::RenderFormat::R32G32B32A32_FLOAT;
+  // kameo-nx (2026-11-03): 8 bits, not 32-bit floats: a quarter of the bytes for each of a pixel's three fetches. Each entry
+  // is what the 8-bit swapchain would make of its float: n / 1023 is never nearer an 8-bit rounding tie than 0.0014 of a
+  // level (checked for all 1024 values), so round() and the render output agree.
+  constexpr plume::RenderFormat kFormat = plume::RenderFormat::R8G8B8A8_UNORM;
   if (!g_gamma.texture) {
     g_gamma.texture = s.device->createTexture(plume::RenderTextureDesc::Texture2D(256, 1, 1, kFormat));
     if (!g_gamma.texture)
@@ -167,19 +171,27 @@ void PrepareGameGammaLocked(VideoState &s) {
     }
     Video::SetTextureSlotLocked(g_gamma.slot, g_gamma.texture.get(), g_gamma.view.get());
     g_gamma.uploaded = 0;
+    g_gamma.uploads = 0;
   }
-  // Every frame (4 KB): a frame's list can be dropped at start-up (run 78's first upload never arrived: black output),
-  // and the copy is cheaper than tracking that.
-  {
-    UploadAllocation staging = s.uploads[s.frame].Allocate(256 * 16, 512);
+  // Every frame at first: a frame's list can be dropped at start-up (run 78's first upload never arrived: black output).
+  // kameo-nx (2026-11-03, banjo_renut_gamma_upload_once): after that, when it changes. The copy, every frame, cost a full
+  // barrier before it and a full barrier with an L2 invalidate after it, right before the scan-out reads the frame.
+  const bool upload = !banjo::renut_gpu::GammaUploadOnceOn() || g_gamma.uploaded != version || g_gamma.uploads < 300;
+  if (upload) {
+    ++g_gamma.uploads;
+    UploadAllocation staging = s.uploads[s.frame].Allocate(256 * 4, 512);
     if (!staging)
       return;
-    auto *texels = static_cast<float *>(staging.cpu);
+    auto *texels = static_cast<uint8_t *>(staging.cpu);
+    // round(entry * 255 / 1023); an entry over 1023 was over 1.0 as a float, which the 8-bit output clamps.
+    const auto level = [](uint16_t entry) {
+      return uint8_t((std::min<uint32_t>(entry, 1023u) * 510u + 1023u) / 2046u);
+    };
     for (uint32_t i = 0; i < 256; ++i) {
-      texels[i * 4 + 0] = float(ramp[i]) / 1023.0f;
-      texels[i * 4 + 1] = float(ramp[256 + i]) / 1023.0f;
-      texels[i * 4 + 2] = float(ramp[512 + i]) / 1023.0f;
-      texels[i * 4 + 3] = 1.0f;
+      texels[i * 4 + 0] = level(ramp[i]);
+      texels[i * 4 + 1] = level(ramp[256 + i]);
+      texels[i * 4 + 2] = level(ramp[512 + i]);
+      texels[i * 4 + 3] = 255;
     }
     plume::RenderCommandList *cmd = s.command_list;
     cmd->barriers(plume::RenderBarrierStage::COPY,
@@ -231,7 +243,17 @@ void RecordScanOut(VideoState &s, const PresentImage &image, uint32_t out_w, uin
   push.translate[1] = frame_v * (1.0f - fit.visible[1]) * 0.5f;
   push.texture_index = image.descriptor;
   push.sampler_index = kLinearClampSamplerSlot;
+  // kameo-nx (2026-11-03, banjo_renut_present_texel_load): one texel for each output pixel, from the texture's corner: the
+  // texel itself, which is what filtering at its centre gives. All ones in the sampler index (present_ps.hlsl).
+  if (banjo::renut_gpu::PresentTexelLoadOn() && image.width == src_w && image.height == src_h && vp.x == 0.0f &&
+      vp.y == 0.0f && vp.width == float(src_w) && vp.height == float(src_h) && fit.visible[0] == 1.0f &&
+      fit.visible[1] == 1.0f)
+    push.sampler_index = UINT32_MAX;
   push.param0 = image.gamma > 0.0f ? image.gamma : s.output_gamma;
+  // kameo-nx (2026-11-03, banjo_renut_present_no_pow): the shader skips an exponent of exactly 1; a negative one is its size
+  // with the pow kept (the key off).
+  if (push.param0 == 1.0f && !banjo::renut_gpu::PresentNoPowOn())
+    push.param0 = -1.0f;
   push.param1 = image.gamma > 0.0f ? 0.0f : g_gamma.param;  // banjo-nx: not on banjo_renut_diag_show_texture's views
   cmd->setGraphicsPushConstants(0, &push, 0, sizeof(push));
   cmd->drawInstanced(3, 1, 0, 0);

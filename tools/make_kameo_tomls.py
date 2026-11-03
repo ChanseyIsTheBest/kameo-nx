@@ -44,6 +44,8 @@ SHIPPED = {
     'banjo_forwarder_program_id': '"05E750DF55751000"',
     'banjo_system_core_xma': 'false',
     'banjo_system_core_audio_output': 'false',
+    # The GPU round (2026-11-03): only the four shaders tools/gpr32_shaders.txt adds for Kameo have the constant. Exact.
+    'banjo_deko3d_gpr32': 'true',
     # Off on Katamari's console measurement (exact either way: the same samples).
     'banjo_xma_frame_cache': 'false',
     'banjo_shader_misses': '"sdmc:/switch/kameo-nx/shader_misses"',

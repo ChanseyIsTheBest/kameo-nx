@@ -344,6 +344,35 @@ REXCVAR_DEFINE_BOOL(banjo_deko3d_depth_handover, true, "Banjo/Enhancements",
                     "target is bound again (then the resolve is drawn after all), and at the target's next whole clear "
                     "the texture takes that image and the target another. The shadow maps, resolved and cleared once a "
                     "frame, are never copied. The float a resolve writes is the depth it loads: same pixels");
+// kameo-nx (2026-11-03, the GPU round from the third console run; docs/kameo-notes.md).
+REXCVAR_DEFINE_BOOL(banjo_deko3d_color_handover, true, "Banjo/Enhancements",
+                    "deko3d renderer: a whole colour resolve into a texture of its size and format is not drawn: the "
+                    "texture is sampled from the target's image until a draw writes the target (then it is drawn after "
+                    "all), and at the target's next whole clear the texture takes that image and the target another. "
+                    "Kameo's 512x512 render-to-texture loop, resolve-and-clear 12 times a frame, is never copied. Every "
+                    "texel is the one the copy would write: same pixels. About 20 MB of GPU memory more");
+REXCVAR_DEFINE_BOOL(banjo_deko3d_scanout_handover, true, "Banjo/Enhancements",
+                    "deko3d renderer: the frame's last resolve, left in the target's image (banjo_deko3d_color_handover), "
+                    "is scanned out from there, not copied first. Same pixels");
+REXCVAR_DEFINE_BOOL(banjo_deko3d_depth_handover_sampled, true, "Banjo/Enhancements",
+                    "deko3d renderer: a draw that writes neither depth nor stencil samples a depth resolve from the image "
+                    "of its own depth target, which it only tests, instead of having the resolve drawn first. Kameo draws "
+                    "2 full-screen depth resolves a frame for this. Same pixels: the image does not change in that draw");
+REXCVAR_DEFINE_BOOL(banjo_deko3d_depth_read_layout, true, "Banjo/Enhancements",
+                    "deko3d renderer: a depth target just sampled stays in the read layout while draws that write neither "
+                    "depth nor stencil use it: no barrier each way between them. Same pixels");
+REXCVAR_DEFINE_BOOL(banjo_deko3d_resolve_keeps_target, true, "Banjo/Enhancements",
+                    "deko3d renderer: a colour resolve that draws nothing leaves the render targets bound. Same pixels");
+REXCVAR_DEFINE_BOOL(banjo_renut_present_no_pow, true, "Banjo/Enhancements",
+                    "The scan-out skips its pow at an output gamma of 1. Its inputs are 8-bit values and its output is "
+                    "8-bit, so the result rounds the same: same pixels");
+REXCVAR_DEFINE_BOOL(banjo_renut_present_texel_load, true, "Banjo/Enhancements",
+                    "The scan-out loads the texel when the frame covers the output one to one, instead of filtering at "
+                    "its centre: same pixels");
+REXCVAR_DEFINE_BOOL(banjo_renut_gamma_upload_once, true, "Banjo/Enhancements",
+                    "The game's gamma ramp is copied to its texture when it changes, and every frame only for the first "
+                    "300 (a frame's list can be dropped at start-up). The copy, every frame, cost a full GPU barrier "
+                    "before it and another with an L2 invalidate after it. Same pixels");
 REXCVAR_DEFINE_BOOL(banjo_deko3d_depth_handover_readonly, true, "Banjo/Enhancements",
                     "deko3d renderer (2026-10-28, GPU block): a handed-over depth resolve (banjo_deko3d_depth_handover) "
                     "is not drawn when its target is bound again for draws that write neither depth nor stencil (the "
@@ -719,6 +748,8 @@ std::atomic<uint64_t> g_ui_depth[2]{};       // internal resolution: UI depth ta
 std::atomic<uint64_t> g_resolves_skipped[2];  // banjo_renut_resolve_skip (2026-10-19): colour, depth
 std::atomic<uint64_t> g_words_lazy[3];  // banjo_renut_depth_words_lazy: not written, written late, read stale
 std::atomic<uint64_t> g_handover[10];   // banjo_deko3d_depth_handover (CountHandOver); [6] h4's binds that kept it,
+std::atomic<uint64_t> g_color_handover[10];  // kameo-nx (2026-11-03): CountColorHandOver
+std::atomic<uint64_t> g_color_not_left[5];   // kameo-nx (2026-11-03): CountColorNotLeft
                                         // [7-9] drawn after all by: a depth-writing draw's bind, a sample while bound, other
 std::atomic<uint64_t> g_fetch_misaligned[2];  // 2026-10-20: draws checked, draws off 16 bytes (CountFetchAlignment)
 std::atomic<uint64_t> g_device_swizzle[2];  // 2026-10-20: binds through the device's swizzle, frames with one
@@ -908,6 +939,14 @@ const char *AbName(int target) {
   case 66: return "resolve host levels made at their first read (banjo_renut_lazy_resolve_mips, from sa2-nx)";  // 2026-10-28
   case 67: return "whole clears of a target holding that clear already not sent (banjo_renut_clear_repeat, from sa2-nx)";
   case 68: return "no pipeline read for the provisional check while none is provisional (banjo_deko3d_provisional_count)";
+  // kameo-nx (2026-11-03): the GPU round (docs/kameo-notes.md).
+  case 73: return "colour resolves left in the target's image (banjo_deko3d_color_handover)";
+  case 74: return "the frame's last resolve scanned out from the target's image (banjo_deko3d_scanout_handover)";
+  case 75: return "a depth resolve sampled from the depth target a draw only tests (banjo_deko3d_depth_handover_sampled)";
+  case 76: return "a sampled depth target left in the read layout for draws that do not write it (banjo_deko3d_depth_read_layout)";
+  case 77: return "a resolve that draws nothing leaves the targets bound (banjo_deko3d_resolve_keeps_target)";
+  case 78: return "no pow in the scan-out at an output gamma of 1 (banjo_renut_present_no_pow)";
+  case 79: return "the scan-out loads the texel at one to one (banjo_renut_present_texel_load)";
   // katamari-nx (2026-10-30): Beautiful Katamari's CPU items (cpu/hot/banjo_hand_natives.h, cpu/banjo_hot_guest.h).
   case 69: return "(free: Katamari's hand-written matrix natives)";
   case 70: return "the localized copies of the hot functions (localized.txt; off half: the generated originals)";
@@ -1318,6 +1357,22 @@ void StatsGameFrame() {
                 g_handover[6].exchange(0, std::memory_order_relaxed), g_handover[7].exchange(0, std::memory_order_relaxed),
                 g_handover[8].exchange(0, std::memory_order_relaxed), g_handover[9].exchange(0, std::memory_order_relaxed));
   }
+  // kameo-nx (2026-11-03): the colour hand-over's own line.
+  if (ColorHandOverOn()) {
+    REXLOG_INFO("[renut] colour hand-over (banjo_deko3d_color_handover): {} resolves not drawn, {} binds of a target's "
+                "image, {} images taken at a whole clear; {} drawn after all ({} from a taken image); {} lost; drawn after "
+                "all for: a draw writing the target {}, a draw sampling it with the target bound {}, other {}; drawn "
+                "at once: part of the target into another size {}, part into its size {}, whole into another size {}, "
+                "a texture with levels {}, format or kind {}",
+                g_color_handover[0].exchange(0, std::memory_order_relaxed), g_color_handover[1].exchange(0, std::memory_order_relaxed),
+                g_color_handover[2].exchange(0, std::memory_order_relaxed), g_color_handover[3].exchange(0, std::memory_order_relaxed),
+                g_color_handover[4].exchange(0, std::memory_order_relaxed), g_color_handover[5].exchange(0, std::memory_order_relaxed),
+                g_color_handover[7].exchange(0, std::memory_order_relaxed), g_color_handover[8].exchange(0, std::memory_order_relaxed),
+                g_color_handover[9].exchange(0, std::memory_order_relaxed),
+                g_color_not_left[0].exchange(0, std::memory_order_relaxed), g_color_not_left[1].exchange(0, std::memory_order_relaxed),
+                g_color_not_left[2].exchange(0, std::memory_order_relaxed), g_color_not_left[3].exchange(0, std::memory_order_relaxed),
+                g_color_not_left[4].exchange(0, std::memory_order_relaxed));
+  }
   // The generated code's self-checks (their "[verify]" line and any DIFFERENCE): banjo-nx's renderer reports them
   // in its own 10 s report; with Renut's renderer nobody did (package 27).
   banjo::CodegenChecksReport(static_cast<int>(since + 0.5));
@@ -1540,6 +1595,51 @@ void CountDeviceSwizzle(uint32_t frame) {
   Bump(g_device_swizzle[0], 1);
   if (g_device_swizzle_frame.exchange(frame, std::memory_order_relaxed) != frame)
     Bump(g_device_swizzle[1], 1);
+}
+
+namespace {
+template <int kTarget>
+[[gnu::always_inline]] inline bool KeyOn(bool key) {
+  return key && g_ab_off.load(std::memory_order_relaxed) != kTarget;
+}
+}  // namespace
+bool ColorHandOverOn() {
+  static const bool on = REXCVAR_GET(banjo_deko3d_color_handover);
+  return KeyOn<73>(on);
+}
+bool ScanOutHandOverOn() {
+  static const bool on = REXCVAR_GET(banjo_deko3d_scanout_handover);
+  return KeyOn<74>(on);
+}
+bool DepthHandOverSampledOn() {
+  static const bool on = REXCVAR_GET(banjo_deko3d_depth_handover_sampled);
+  return KeyOn<75>(on);
+}
+bool DepthReadLayoutOn() {
+  static const bool on = REXCVAR_GET(banjo_deko3d_depth_read_layout);
+  return KeyOn<76>(on);
+}
+bool ResolveKeepsTargetOn() {
+  static const bool on = REXCVAR_GET(banjo_deko3d_resolve_keeps_target);
+  return KeyOn<77>(on);
+}
+bool PresentNoPowOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_present_no_pow);
+  return KeyOn<78>(on);
+}
+bool PresentTexelLoadOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_present_texel_load);
+  return KeyOn<79>(on);
+}
+bool GammaUploadOnceOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_gamma_upload_once);
+  return on;
+}
+void CountColorNotLeft(int why) {
+  g_color_not_left[why].store(g_color_not_left[why].load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+}
+void CountColorHandOver(int what) {
+  g_color_handover[what].store(g_color_handover[what].load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 }
 
 bool DepthHandOverReadOnlyOn() {

@@ -357,6 +357,21 @@ void CountFetchAlignment(bool aligned);
 [[gnu::always_inline]] inline bool DepthHandOverOn() { return Latch().depth_handover; }
 // banjo-nx (2026-10-28, GPU block): banjo_deko3d_depth_handover_readonly (A/B 64).
 bool DepthHandOverReadOnlyOn();
+// kameo-nx (2026-11-03, the GPU round from the third console run; docs/kameo-notes.md). A/B targets 73-79.
+bool ColorHandOverOn();          // banjo_deko3d_color_handover (73)
+bool ScanOutHandOverOn();        // banjo_deko3d_scanout_handover (74)
+bool DepthHandOverSampledOn();   // banjo_deko3d_depth_handover_sampled (75)
+bool DepthReadLayoutOn();        // banjo_deko3d_depth_read_layout (76)
+bool ResolveKeepsTargetOn();     // banjo_deko3d_resolve_keeps_target (77)
+bool PresentNoPowOn();           // banjo_renut_present_no_pow (78)
+bool PresentTexelLoadOn();       // banjo_renut_present_texel_load (79)
+bool GammaUploadOnceOn();        // banjo_renut_gamma_upload_once
+// The colour hand-over's counts, as CountHandOver's: 0 not drawn, 1 binds of an image, 2 taken at a whole clear, 3 drawn after
+// all, 4 of them from a taken image, 5 lost, 7 drawn for a draw writing the target, 8 for a draw sampling it, 9 other.
+void CountColorHandOver(int what);
+// Why a colour resolve was drawn: 0 smaller than the target, into a texture of another size; 1 part of a target into a
+// texture of its size; 2 whole, but the texture is another size or scale; 3 the texture has levels; 4 format or kind.
+void CountColorNotLeft(int why);
 // banjo_deko3d_depth24 (2026-10-19, GPU): D24S8 depth targets as 24-bit unorm (render/format.cpp).
 [[gnu::always_inline]] inline bool Depth24On() { return Latch().depth24; }
 // banjo_deko3d_push_constants (2026-10-19, render-thread proposals 2 and 5): the float constants and SharedConstants

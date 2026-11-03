@@ -409,7 +409,7 @@ banjo_display_phase_max_us = 12000
 # blended effects; the fur shells write depth) depth tested before they run; both the same pixels. The fur family with 32 GPRs at most is an A/B, off.
 banjo_deko3d_txq_constants = true
 banjo_deko3d_early_z = true
-banjo_deko3d_gpr32 = false
+banjo_deko3d_gpr32 = true
 # GPU A/B (package 36c): the heaviest lit shaders' point lights in branches on their reach (warps out of a light's
 # reach skip it); the same pixels, off until the console says it is faster.
 banjo_deko3d_light_branch = false

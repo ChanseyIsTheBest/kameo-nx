@@ -10,6 +10,13 @@ $data = "D:\New folder\ryu-data\kameo"
 $sd = Join-Path $data "sdcard\switch\kameo-nx"
 $nro = Join-Path $sd "kameo-nx.nro"
 $out = Join-Path $root "out\emu_runs\$Name"
+# kameo-nx (2026-11-03): the run launches the card's NRO, so a newer build goes there first. Three runs tested an old build
+# because nothing copied it, and only run.nro.txt showed that.
+$built = Join-Path $root "app\out\switch\renut.nro"
+if ((Test-Path $built) -and (-not (Test-Path $nro) -or (Get-Item $built).LastWriteTime -gt (Get-Item $nro).LastWriteTime)) {
+  Copy-Item $built $nro -Force
+  Write-Output ("the newer build copied to the card: {0} bytes" -f (Get-Item $nro).Length)
+}
 if (@(Get-Process -Name Ryujinx -ErrorAction SilentlyContinue).Count -ge 2) { Write-Output "two Ryujinx are running (other ports'): not starting"; exit 2 }
 $os = Get-CimInstance Win32_OperatingSystem
 $freeCommit = ($os.TotalVirtualMemorySize - ($os.TotalVirtualMemorySize - $os.FreeVirtualMemory)) / 1MB

@@ -191,7 +191,7 @@ void RetireTarget(HostSurface &surface) {
         RetireTarget(*u->surface);
     }
   }
-  if (surface.depth && surface.handed)
+  if (surface.handed)  // kameo-nx (2026-11-03): colour targets too (banjo_deko3d_color_handover)
     DepthHandOverBeforeRetireLocked(&surface);  // banjo-nx (2026-10-19, banjo_deko3d_depth_handover)
   FreeDepthViews(surface.handover_views);
   surface.stencil_used = false;
@@ -989,8 +989,11 @@ void SwapDepthImageLocked(HostSurface &surface, DepthImage &image) {
 bool MakeDepthImageLocked(const HostSurface &surface, DepthImage &image) {
   plume::RenderDevice *device = Video::Device();
   const uint32_t w = surface.scale.Size(surface.width), h = surface.scale.Size(surface.height);
+  // kameo-nx (2026-11-03, banjo_deko3d_color_handover): a colour target's image is made as GetHostSurfaceLocked makes it.
   image.texture = device->createTexture(
-      plume::RenderTextureDesc::DepthTarget(w, h, surface.format, plume::RenderMultisampling(surface.samples)));
+      surface.depth
+          ? plume::RenderTextureDesc::DepthTarget(w, h, surface.format, plume::RenderMultisampling(surface.samples))
+          : plume::RenderTextureDesc::ColorTarget(w, h, surface.format, plume::RenderMultisampling(surface.samples)));
   if (!TextureCreated(image.texture.get())) {
     image.texture.reset();
     ReportDeviceLost(device);
@@ -1010,7 +1013,10 @@ bool MakeDepthImageLocked(const HostSurface &surface, DepthImage &image) {
 void RetireDepthImageLocked(DepthImage &image) {
   // The framebuffers a surface made over this image (cached by its generation).
   for (size_t i = 0; i < g_framebuffers.size();) {
-    if (g_framebuffers[i].key.depth && g_framebuffers[i].key.depth_generation == image.generation) {
+    bool over_image = g_framebuffers[i].key.depth && g_framebuffers[i].key.depth_generation == image.generation;
+    for (uint32_t c = 0; c < d3d::kMaxRenderTargets; ++c)  // kameo-nx (2026-11-03): a colour target's image
+      over_image = over_image || (g_framebuffers[i].key.colors[c] && g_framebuffers[i].key.color_generations[c] == image.generation);
+    if (over_image) {
       Video::RetireLocked(std::move(g_framebuffers[i].framebuffer));
       g_framebuffers[i] = std::move(g_framebuffers.back());
       g_framebuffers.pop_back();
