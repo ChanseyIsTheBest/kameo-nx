@@ -339,6 +339,8 @@ Ten changes, each exact by the argument given, each with its own key, on by defa
 
 Ridge Racer 6's session reports a deko3d fault for indexed strips with 0xFFFF restart markers in the range draw path (their `rr6_strip_markers`): huge wedges for a few frames after a mesh first appears. Not in this build. Whether Kameo has it is not tested yet: about 17 % of its draws go through that path.
 
+Checked in `emu63strip` (2026-11-04, `banjo_renut_whole_buffers = false`, rc9's NRO): 502,103 draws, all through the ranges, and no wedges or torn meshes in 31 captures. **That is weak evidence.** They cover only the menus, the opening cutscene and the first wall climb, and the run did not count how many draws carry a marker. Whole buffers stay on by default, so the console takes that path for most draws anyway. Nothing was changed.
+
 ## The cheat codes (2026-11-03, night)
 
 The user asked for Kameo: RePowered's four codes. `app/src/kameo_codes.cpp` and `kameo_collectibles.inc`, adapted from its `src/ui/pause_menu/`, `src/ui/text_window.cpp` and `src/engine/` (MIT, `THIRD_PARTY_NOTICES.md`). Eight presses on any pause or options page, a sound, and an "Extras" line appears at the end of Game Options for good. With no code entered no page changes, and no picture changes.
