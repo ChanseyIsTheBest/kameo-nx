@@ -38,7 +38,12 @@ SHIPPED = {
     'target_refreshRate': '-1',
     'masseffect_renderer_native': 'false',
     'gpu_plugin': '""',
-    'banjo_forwarder_program_id': '""',
+    # The user's request (2026-11-03): the fourth core on by default, with only the Audio Worker (the heavier audio thread in
+    # both console runs) and the shader compiler on it. This id is what Sphaira gives a forwarder of
+    # sdmc:/switch/kameo-nx/kameo-nx.nro; a launch without a forwarder stays on three cores.
+    'banjo_forwarder_program_id': '"05E750DF55751000"',
+    'banjo_system_core_xma': 'false',
+    'banjo_system_core_audio_output': 'false',
     # Off on Katamari's console measurement (exact either way: the same samples).
     'banjo_xma_frame_cache': 'false',
     'banjo_shader_misses': '"sdmc:/switch/kameo-nx/shader_misses"',

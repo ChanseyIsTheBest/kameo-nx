@@ -25,6 +25,7 @@
 
 // banjo-nx (2026-10-27): the system core (core/threading_switch.h; declared here, that header clashes with switch.h).
 extern "C" bool RexSwitchMoveCurrentThreadToSystemCore(int priority);
+extern "C" bool RexSwitchSystemCoreAudioOutput(void);
 extern "C" void RexSwitchSampleCoreIdle(void);
 
 // Passive counters: the audio thread neither writes reports nor pauses the game.
@@ -370,7 +371,9 @@ void SwitchAudioSystem::OutputThreadMain() {
   // banjo-nx (2026-10-27): on the system core when the process has it (threading_switch.h, banjo_system_core), above
   // the Audio Worker and the XMA Decoder there (0x2B; Horizon does not preempt between equal priorities). It also
   // samples that core's idle time for the report.
-  const bool on_system_core = RexSwitchMoveCurrentThreadToSystemCore(kOutputThreadPriority - 1);
+  // kameo-nx (2026-11-03): only with banjo_system_core_audio_output.
+  const bool on_system_core =
+      RexSwitchSystemCoreAudioOutput() && RexSwitchMoveCurrentThreadToSystemCore(kOutputThreadPriority - 1);
   for (size_t i = 0; i < kBufferCount; ++i) {
     FillAndAppend(i);
   }

@@ -216,6 +216,8 @@ bool RexSwitchMoveCurrentThreadToSystemCore(int priority);
 int RexSwitchEnsureForwarderNpdm(void);
 /* banjo-nx (2026-10-27): banjo_system_core_xma (the XMA Decoder on the system core) and the mixer's priority there. */
 bool RexSwitchSystemCoreXma(void);
+/* kameo-nx (2026-11-03): banjo_system_core_audio_output (the audio output thread on the system core). */
+bool RexSwitchSystemCoreAudioOutput(void);
 int RexSwitchSystemCoreMixerPriority(void);
 /* One line: the cores, the system core, the mode and the NPDM's state (for the log). */
 void RexSwitchSystemCoreDescribe(char* out, size_t out_len);

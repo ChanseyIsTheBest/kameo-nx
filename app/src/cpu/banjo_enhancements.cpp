@@ -125,6 +125,7 @@ REXCVAR_DECLARE(bool, banjo_ring_pmull_fingerprint);  // masseffect_native_draws
 REXCVAR_DECLARE(bool, banjo_hand_memcpy);       // src/cpu/banjo_hot_guest.cpp (hot/banjo_hand_natives.h)
 REXCVAR_DECLARE(bool, banjo_hand_memset);       // src/cpu/banjo_hot_guest.cpp
 REXCVAR_DECLARE(bool, banjo_hand_constants);    // src/cpu/banjo_hot_guest.cpp
+REXCVAR_DECLARE(bool, banjo_hand_matrix);       // src/cpu/banjo_hot_guest.cpp
 REXCVAR_DECLARE(bool, banjo_hand_state_flush);  // src/cpu/banjo_hot_guest.cpp
 REXCVAR_DECLARE(bool, banjo_gpu_texcoords_unswapped);  // masseffect_native_draws.cpp (from sa2-nx)
 REXCVAR_DECLARE(bool, banjo_gpu_no_texture_signs);  // masseffect_native_draws.cpp (from sa2-nx)
@@ -393,6 +394,7 @@ void LogEnhancements() {
       {"banjo_hand_memcpy", EnhancementGroup::kCpu, REXCVAR_GET(banjo_hand_memcpy)},
       {"banjo_hand_memset", EnhancementGroup::kCpu, REXCVAR_GET(banjo_hand_memset)},
       {"banjo_hand_constants", EnhancementGroup::kCpu, REXCVAR_GET(banjo_hand_constants)},
+      {"banjo_hand_matrix", EnhancementGroup::kCpu, REXCVAR_GET(banjo_hand_matrix)},
       {"banjo_hand_state_flush", EnhancementGroup::kCpu, REXCVAR_GET(banjo_hand_state_flush)},
       {"banjo_gpu_push_once", EnhancementGroup::kNonCpu, REXCVAR_GET(banjo_gpu_push_once)},
       {"banjo_gpu_pass_narrow_end", EnhancementGroup::kNonCpu, REXCVAR_GET(banjo_gpu_pass_narrow_end)},

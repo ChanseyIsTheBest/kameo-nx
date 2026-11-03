@@ -9,3 +9,7 @@
 82554238   # C runtime memset. Top of the emulator lists, inside sub_82265300 and sub_82110280: table lookups to build one byte, a store and card per 16 bytes
 820C9C38   # Direct3D vertex shader float-constant writer. Drawing thread 2.7 %: emulated unaligned vector loads and a card per vector
 820C9D80   # Direct3D pixel shader float-constant writer. The same routine with (r4 + 376) and the mask at r3 + 24
+#
+# Console run of 2026-11-03 evening (package rc5_try, Thorn's Castle, handheld at stock clocks; docs/console-run-2-2026-11-03.md).
+820E0DC8   # 4x4 matrix multiply, transposed result, the bone palette's loop inside sub_820E7F10. At least 67 of that function's 332 samples: transposes, sixteen dot products with two faddp and a dup each, shuffles, and the fourteen vector registers written back. 427 call sites of the two checked by reading what follows each: none reads a register these leave behind (the loop-local moves only pass values along)
+820E0CE0   # The same multiply with the result in row order. Same statements, same evidence

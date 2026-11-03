@@ -36,11 +36,15 @@ The others        test configs and options that change the picture, one key away
 
 Cores
 -----
-The port runs on the three cores a homebrew launch gets. Four cores are optional and off: with
-banjo_forwarder_program_id in kameo.toml set to your forwarder's id, the NRO writes that forwarder's four-core NPDM
-(NetherSX2_nx's layout, CPU 0-3) to sdmc:/atmosphere/contents/<id>/exefs/main.npdm, and the next launch has CPU 0-3
-(the log's "[banjo] system core:" line says whether the fourth core was granted). Delete that main.npdm to go back to
-three cores.
+A launch from the homebrew menu gets three cores, and the game runs on them. The fourth core is on by default, but only a
+forwarder can be granted it: in Sphaira, press X on the NRO, Install Forwarder, Address Space 39-bit, Create Forwarder. Start
+that forwarder twice: the first start writes its four-core NPDM (NetherSX2_nx's layout, CPU 0-3) to
+sdmc:/atmosphere/contents/<id>/exefs/main.npdm, and the second has CPU 0-3. For sdmc:/switch/kameo-nx/kameo-nx.nro the id
+is 05E750DF55751000. The log's "[banjo] system core:" line says whether the fourth core was granted, and rex_profile.log's
+"system core 3: idle N%" how much of it is left.
+
+On the fourth core: only the Audio Worker and the shader compiler, the compiler held to 10 % of it. Everything else stays on
+the other three. Delete that main.npdm to go back to three cores.
 
 Console profile
 ---------------

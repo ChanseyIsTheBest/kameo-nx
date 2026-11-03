@@ -224,6 +224,8 @@ All four packs install through the base's installer on both builds (Kameo Add-On
 
 ## The round after the first console profile (2026-11-03)
 
+**Superseded on copies:** the 4,089 below became 13,855 at the user's request, which crashed at boot on the console (the next section), and then 999, which is what ships. The user's limit is now about 70 MB of NRO, and no more machine copies for now.
+
 The evidence is `docs/console-run-2026-11-03.md`: 27.8 fps without compile waits, 22.7 fps overall, 34.1 s of 252 s blocked on 79 shader compiles, and the game's drawing thread the limit at 94 % of a core. No frame rate below is from a console: this round has not run on one.
 
 **Machine copies: 336 to 4,089.** The 110 held back are in the build at the user's request (below, how many of them the guard could compare), plus 553 sampled on the console and 3,090 they call, followed to a fixed point. 48 compile units instead of 12, because GCC ran out of commit memory on a shared machine. NRO 54.8 to 99.5 MB, about 11 KB a copy. About 10,100 eligible functions are still not copied: none has a sample on any machine, and they would take the NRO to roughly 210 MB. That is the user's decision.
@@ -272,6 +274,33 @@ If a console freezes this way, the first test is `banjo_cpu_native_bulk = false`
 `emu14` (05:34, 560 s, verify keys, **the NRO that ships**, 54.8 MB, 336 copies, all 5,861 shaders, the chain on): logo, title, menus, opening movie, Thorn's Castle. 40 verify lines 0 differ; 3.17 million snapshot draws checked, 0 differ; 335 of 336 copies reached, 2.6 million calls compared, 0 differences; no missing shader, no dropped draw. GPU region 938 MB. Render thread 118-258 ms a frame there with every verify key on, which is not a timing.
 
 Machine load matters to these figures: `tools/load_log.ps1` logs it beside a run. The Game List crawling at 1.5-3 fps in `emu9` was not the save, as I first thought: `emu10prof` holds the same page at 60 fps with a save present, and its slow stretches sit in a period with the CPU at 100 % and 15 compiler processes from another port.
+
+## The round after the second console profile (2026-11-03 evening)
+
+The evidence is `docs/console-run-2-2026-11-03.md`. The stall fix worked (blocked on compiles 34.1 s to 0, worst hitch 7.9 s to 0.44 s, 22.7 to 26.3 fps overall), and windows without waits did not gain (27.8 to 26.3 fps; the scene differs, XMA 4,769 against 3,496 contexts a second, so that comparison separates little).
+
+**Why the 13,855-copy NRO crashed.** Its code spanned 159 MB, past AArch64's 128 MB branch range. `exception_handler_switch.cpp`'s `bl svcReturnFromException` then went through a linker veneer (`adrp x16 / add x16 / br x16`) after the handler had restored the registers, so interrupted code resumed with x16 holding the image address, and the next store card faulted. So 128 MB of code is a hard limit here, and `nm` must show no veneers. 999 copies: 68 MB, 0 veneers.
+
+**The fourth core** (the user's request): on by default, as banjo-nx does it. Only the Audio Worker, the heavier audio thread in both console runs (18.8 % of a core against the XMA Decoder's 16.8 %), and the shader compiler, held to 10 % of the core. The XMA Decoder and the audio output stay on cores 0-2 (`banjo_system_core_xma`, `banjo_system_core_audio_output`, both false). The Audio Worker now samples the core's idle time, since the output thread that did is no longer there. A launch from the homebrew menu still gets three cores: only a forwarder can be granted the fourth. `SphairaForwarderOfThisNro` (from renut-nx) recognises Sphaira's id for this NRO's path, `05E750DF55751000`. Against banjo-nx's measurement that the system takes about half of core 3 and stutters at 41-55 %, about 29 % should fit: that is a reading of two numbers, not a test on Kameo.
+
+**Hand work on the five functions the user listed.** All samples are the second console run's, on the drawing thread. Estimated total: about 3 % of the thread, about 1 ms of its 38 ms. That is an estimate from samples, and my last one (`CaptureDelta`, a predicted 65 % cut that came in at 13 %) was wrong, so the console decides.
+
+| Function | Share | Where its samples are | What was done |
+|---|---|---|---|
+| `sub_820E7F10` | 10.7 % | A 4x4 matrix multiply for bones, at least 67 of 332. The context hand-over, 60 of 332. | Natives for both matrix multiplies, a prefetch two bones ahead, and registers left in the context (below). |
+| `sub_82379E10` | 6.7 % | The skip loop, 77 of 209: 53 on the element load and its prefetch, and about 12 writing cr6 to the stack per element. | No cr6 in the loop, and its values in locals so they stay in registers. |
+| `sub_82110280` | 5.0 % | Flat: 88 % on loads, tree walks and object fields, none over 7 %. | **Nothing.** I found nothing to remove. A tree's next node is unknown until the load, and a cache of lookups would need to know when the tree changes, which would not be exact. |
+| `sub_8231C268` | 4.2 % | Flat: 115 addresses for 129 samples. | **Nothing of its own.** Keeping f and v in the context was compiled and rejected: 312 more instructions and 82 more context stores. It does gain from the card fix below. |
+| `sub_82524E98` | 3.4 % | The same skip-loop shape, 43 of 105: 23 on one load with no prefetch, the rest on four spills and cr6. | A loop of its own with a prefetch 8 elements ahead. |
+
+- **Matrix natives** (`n_820E0DC8`, `n_820E0CE0`, key `banjo_hand_matrix`): the generated code transposes A, takes sixteen dot products at a multiply, two `faddp` and a `dup` each, and shuffles the results together. Read from those statements, each result is `(B[j][3]*A[3][i] + B[j][2]*A[2][i]) + (B[j][1]*A[1][i] + B[j][0]*A[0][i])`. The native does the same multiplies and the same additions in the same pairs, four results at a time, so rounding matches. `sub_820E0DC8` is the transposed form. They write no register. Checked by reading what follows each of the 427 call sites: nothing reads what they leave behind. One known limit: with two NaN operands the result's payload could differ, because GCC treats multiply and add as commutative, in the generated code too.
+- **Context registers** (`KEEP_IN_CONTEXT` in `tools/hand_copies.py`): the interpreter's `f_` keeps f1-f13 and r3-r10 in the context, which is the original statements' own form, so it is exact by construction. Its 29 real calls carried 286 stores and 377 loads of f1-f13, because the back edge makes every register "maybe changed", and the handlers use those registers in 22 places. Compiled: 7,399 to 6,774 instructions, 1,090 to 688 stack accesses, 155 to 22 floating-point context accesses.
+- **`Card` in `banjo_hot_common.h`**: GCC turned the card loop into a `memset` call, with everything live saved around it, on the hot path of the natives, including the constant uploads. Up to a page now takes one or two direct byte stores.
+- **`hand_copies.py` limits**: the skip loops read the count on every element, as the originals do. Hoisting it would save little and need an argument about other threads.
+
+**Clip planes (from Ridge Racer 6's session):** Renut never applies user clip planes (`ClipControl & 0x3F`). Kameo's code stores them too but nothing here shows whether it uses them. A census needs a logging build. Suggested after this console run.
+
+**The guard on the 999-copy build before these edits** (`emu50guard`): 0 differences in 5,564,376 compared calls, 4,223,048 not comparable, 130 that differed once and not when repeated; 875 of 995 reached; 18.6 million snapshot draws, 0 differ; 0 compiles. `emu51plain`: wall 20.6, lilac about 1 %.
 
 ## Enhancements audit (2026-11-02)
 

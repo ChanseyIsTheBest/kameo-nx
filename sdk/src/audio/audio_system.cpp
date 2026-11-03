@@ -45,6 +45,12 @@ REXCVAR_DEFINE_BOOL(audio_diag_critical_priority, false, "Audio",
 // and let the normal AudioSystem handling take it, to prevent duplicate
 // implementations. They can be found in xboxkrnl_audio_xma.cc
 
+#if REX_PLATFORM_SWITCH
+// kameo-nx (2026-11-03): with the audio output thread off the system core, the Audio Worker samples the idle time of the
+// core it runs on (at most every 100 ms; core/threading_switch.h, declared here as switch_audio_system.cpp does).
+extern "C" void RexSwitchSampleCoreIdle(void);
+#endif
+
 namespace rex::audio {
 
 namespace {
@@ -120,6 +126,9 @@ void AudioSystem::WorkerThreadMain() {
   // Main run loop.
   uint32_t diag_pump_count = 0;
   while (worker_running_) {
+#if REX_PLATFORM_SWITCH
+    RexSwitchSampleCoreIdle();
+#endif
     // These handles signify the number of submitted samples. Once we reach
     // 64 samples, we wait until our audio backend releases a semaphore
     // (signaling a sample has finished playing)

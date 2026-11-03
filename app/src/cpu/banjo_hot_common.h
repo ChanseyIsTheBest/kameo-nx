@@ -111,7 +111,15 @@ struct WriteLog {
 
 // banjo-nx (2026-10-19): a range a hand-written native writes (outside the stack) marks its store cards, as the guest
 // code's stores would (rex/system/xmemory.h; Renut proves its cached vertex and index copies by them).
+// kameo-nx (2026-11-03): up to a page is one or two cards, written directly. GCC turns MarkStoreCardsAt's loop into a call to
+// memset, with everything live saved around it, on the natives' hot paths (the second console run: the constant uploads).
 [[gnu::always_inline]] inline void Card(uint8_t* base, uint32_t addr, uint32_t len) {
+  if (len - 1u < 4096u) [[likely]] {
+    base[addr >> 12] = 0;
+    const uint32_t last = addr + (len - 1u);
+    if (last > addr) base[last >> 12] = 0;  // (a range past 4 GB has no card beyond addr's page, as there)
+    return;
+  }
   rex::memory::MarkStoreCardsAt(base, addr, len);
 }
 

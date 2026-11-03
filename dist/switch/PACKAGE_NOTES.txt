@@ -1,23 +1,28 @@
 kameo-nx: notes for this package
 =================================
 
-Nothing here has run on a real console. Ryujinx and the PC are proxies: every timing below is theirs, not the A57's.
+Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-What this exact NRO has done in Ryujinx (emu30guard to emu34plain): Rare logo, title, menus, the opening movie and Thorn's Castle. With the
-guard and every verify key on: 0 differences in 4.6 million compared calls, 0 of 11.87 million draws differ. Handheld only. Frame rate there
-says little about the console. What has not been run anywhere: past the opening of the first level, a DLC outfit on screen, the water
-cannon, co-op, and this NRO on a console.
+New in this package, all from your second console run (docs/console-run-2-2026-11-03.md in the source):
+- The fourth core is on by default: only the Audio Worker and the shader compiler, the compiler held to 10 % of it. The XMA Decoder and the audio
+  output stay on the other three. It needs a forwarder (Cores, below): from the homebrew menu you still get three.
+- Hand work on the five functions you listed: natives for the bone matrices (banjo_hand_matrix), tighter skip loops in sub_82379E10 and
+  sub_82524E98, and fewer register hand-overs in the command interpreter, sub_820E7F10. I found nothing to remove in sub_82110280 or
+  sub_8231C268. My estimate is about 1 ms of the drawing thread's 38 ms, not a measurement: my last estimate of this kind was too high.
+- Still 999 machine copies, about 68 MB. banjo_cpu_native_bulk = false in kameo.toml turns them all off.
 
-New in this package, all from your console run (docs/console-run-2026-11-03.md in the source):
-- Shader compile stalls: a full cache of 8,379 variants, so draws should no longer wait for a compile (34 s of your 252 s). 0 compiles and 0
-  waits in every emulator run; on your console, read the log's "uam N compiles" and "blocking: N a draw waited for" lines.
-- 4,089 machine copies, up from 336, including the 110 held back. banjo_cpu_native_bulk = false in kameo.toml turns them all off.
-- Hand work on the drawing thread: CaptureDelta's compare, a skip loop in sub_82379E10, and natives for memcpy, memset and the constant writers
-  (banjo_hand_memcpy, banjo_hand_memset, banjo_hand_constants). sub_82110280, sub_8231C268 and sub_820E7F10 were not rewritten by hand.
+This NRO's emulator tests are in docs/progress-log.md. The emulator freeze seen on an earlier build under heavy load on the PC was not looked
+into further, at your request. If a console freezes: send logs/renut_001.log and logs/rex/banjo_profiler.log.
 
-ONE OPEN PROBLEM: one of five emulator runs of this NRO froze for good: no frames, sound may go on, the process alive. A build from before
-these changes did the same once, always under heavy load on the PC, and the cause is not known. It has not been seen on a console. If yours
-freezes: send logs/renut_001.log and logs/rex/banjo_profiler.log, then try banjo_cpu_native_bulk = false to see whether the copies matter.
+Cores
+-----
+In Sphaira, press X on kameo-nx.nro, Install Forwarder, Address Space 39-bit, Create Forwarder. Start that forwarder twice: the first start
+writes its four-core NPDM to sdmc:/atmosphere/contents/05E750DF55751000/exefs/main.npdm, and the second has all four. The id is what Sphaira
+gives this exact path, sdmc:/switch/kameo-nx/kameo-nx.nro. The log's "[banjo] system core:" line says whether it was granted, and
+rex_profile.log's "system core 3: idle N%" what is left of it. Delete that main.npdm to go back to three.
+This needs the kameo.toml in this package: an older one on your card has an empty banjo_forwarder_program_id, which overrides the built-in
+one. banjo-nx measured stutter when the system had 41-55 % of core 3; here the Audio Worker and compiler should take about 29 %. If sound
+stutters with four cores, set banjo_system_core = 0 in kameo.toml and tell me.
 
 Known differences from the reference (docs/kameo-notes.md has the captures): none open in the idle view of Thorn's Castle. The rings
 above the player are denser than in the reference: the game places them by frame rate, so your console's spacing will follow its own.
@@ -33,8 +38,8 @@ Setting up
 ----------
 A package made with -Ready has a switch folder holding everything: copy it to the root of the SD card, merging with the card's
 switch folder, and start kameo-nx from the homebrew menu. About 5.7 GB, and about 90 MB more when the DLC installs at the first
-start. A card that already has an earlier package needs only four files, from switch/kameo-nx: kameo-nx.nro, deko3d_shaders.bin,
-deko3d_shaders.idx and pipeline_list.bin. Otherwise:
+start. A card that already has an earlier package needs only two files from switch/kameo-nx: kameo-nx.nro and kameo.toml (keep your
+own kameo.toml's changes if you made any). Otherwise:
 1. Copy COPY_TO_SD_switch_kameo-nx to sdmc:/switch/kameo-nx/ .
 2. game_root/: your extracted disc, with title update 2's default.xexp next to default.xex.
 3. update/: title update 2's language folders (English, French ...).

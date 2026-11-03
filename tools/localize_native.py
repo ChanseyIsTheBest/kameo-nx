@@ -861,8 +861,9 @@ def localize(index, hooks, reach, root, what, opts, out_dir, quiet=False, hand=N
         numbered = index.body(name)
         lines = [l for _, l in numbered]
         text = '\n'.join(lines)
-        regs = funcs[name]['regs']
-        written = funcs[name]['written']
+        kept = hand_copies.KEEP_IN_CONTEXT.get(name, set())  # kameo-nx: these stay ctx.<reg> in f_ too
+        regs = [r for r in funcs[name]['regs'] if r not in kept]
+        written = [r for r in funcs[name]['written'] if r not in kept]
         for m in PROMOTED.finditer(text):
             externs.add(m.group(1))
         dirty, writes, dirty_end = dirty_sets(name, lines, lambda l: [call_reach(m)[0] for m in CALL.finditer(l)])
@@ -883,7 +884,7 @@ def localize(index, hooks, reach, root, what, opts, out_dir, quiet=False, hand=N
             in_switch = False
             for at, (number, l) in enumerate(numbered):
                 # What can be dirty when this statement's call or return runs (an unreached statement: everything).
-                here = sorted(written if dirty[at] is None else (dirty[at] | writes[at]), key=order)
+                here = sorted(written if dirty[at] is None else (dirty[at] | writes[at]) - kept, key=order)
                 sync_out = ''.join(f'ctx.{r} = l_{r}; ' for r in here)
                 if localized:
                     if LABEL.match(l):
@@ -907,7 +908,7 @@ def localize(index, hooks, reach, root, what, opts, out_dir, quiet=False, hand=N
                         pending = True
                     if not in_switch and (GOTO.search(l) or RETURN.search(l)):
                         pending = True
-                    l = REG.sub(lambda m: 'l_' + m.group(1), l)
+                    l = REG.sub(lambda m: m.group(0) if m.group(1) in kept else 'l_' + m.group(1), l)
                 l, stores = store_line(l)
                 l = CALL.sub(lambda m: call_text(m, name, regs, here, localized), l)
                 if localized and sync_out:
@@ -929,7 +930,7 @@ def localize(index, hooks, reach, root, what, opts, out_dir, quiet=False, hand=N
                 for r in regs:
                     block_of_line.append((f'\t{type_of(r)} l_{r} = ctx.{r};', entry_block[name]))
                 block_of_line.extend(body)
-                end = sorted(written if dirty_end is None else dirty_end, key=order)
+                end = sorted(written if dirty_end is None else dirty_end - kept, key=order)
                 if end and not (numbered and ONLY_RETURN.match(numbered[-1][1])):
                     block_of_line.append(('\t' + ' '.join(f'ctx.{r} = l_{r};' for r in end), block))
                 block_of_line.append(('}', block))

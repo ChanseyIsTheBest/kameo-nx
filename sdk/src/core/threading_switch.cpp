@@ -53,6 +53,11 @@ REXCVAR_DEFINE_BOOL(banjo_system_core_xma, false, "Banjo/Threads",
                     "Four-core mode: the XMA Decoder thread on the system core too (it took 5-13 % of it in the city; "
                     "off: it runs with the game threads on cores 0-2)")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-03, the user's request: only the Audio Worker and the shader compiler on the fourth core).
+REXCVAR_DEFINE_BOOL(banjo_system_core_audio_output, true, "Banjo/Threads",
+                    "Four-core mode: the audio output thread on the system core too (about 1 % of it; off: it runs with "
+                    "the game threads on cores 0-2)")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_INT32(banjo_system_core_mixer_priority, 0x2D, "Banjo/Threads",
                      "Four-core mode: the XAudio mixer threads' priority on the system core (0x2D: below the audio "
                      "output (0x2A) and the Audio Worker (0x2B), above anything at the game threads' 0x3B; -1 keeps the "
@@ -610,6 +615,30 @@ void RexSwitchSampleCoreIdle(void) {
   s.at.store(now, std::memory_order_release);
 }
 
+// kameo-nx (2026-11-03, from renut-nx 1.0.0): whether 'program' is the id Sphaira's "Install Forwarder" gives a forwarder of
+// this NRO (sphaira source/owo.cpp, forwarder_path_hash and the tid functions): the first 8 bytes of the SHA-256 of the NRO
+// path written twice (the forwarder's arguments default to the path) as 05xxxxxxxxxxx000, or, in its native-game mode,
+// 01xxxxxxxxxxx000 with bit 12 clear; the path with "sdmc:" and without (its older installs). Checked against banjo-nx's
+// forwarder: "sdmc:/switch/banjo-nx/banjo-nx.nro" gives 05D6EA1333487000, and this port's path gives 05E750DF55751000. A
+// retail game's id (title takeover) never matches, so its NPDM is never replaced.
+extern "C" int __system_argc;      // libnx: the NRO's path in argv[0] (as filesystem_posix.cpp)
+extern "C" char** __system_argv;
+static bool SphairaForwarderOfThisNro(u64 program) {
+  if (__system_argc <= 0 || !__system_argv || !__system_argv[0] || !__system_argv[0][0]) return false;
+  const std::string path = __system_argv[0];
+  const std::string rooted = path.rfind("sdmc:", 0) == 0 ? path.substr(5) : path;
+  for (const std::string& p : {std::string("sdmc:") + rooted, rooted}) {
+    const std::string hashed = p + p;
+    u64 digest[4] = {};
+    sha256CalculateHash(digest, hashed.data(), hashed.size());
+    const u64 h = digest[0];
+    if (program == (0x0500000000000000ull | (h & 0x00FFFFFFFFFFF000ull)) ||
+        program == (0x0100000000000000ull | (h & 0x00FFFFFFFFFFE000ull)))
+      return true;
+  }
+  return false;
+}
+
 int RexSwitchEnsureForwarderNpdm(void) {
   const std::string want_text = REXCVAR_GET(banjo_forwarder_program_id);
   if (want_text.empty()) {
@@ -618,7 +647,8 @@ int RexSwitchEnsureForwarderNpdm(void) {
   }
   const u64 want = std::strtoull(want_text.c_str(), nullptr, 16);
   u64 program = 0;
-  if (R_FAILED(svcGetInfo(&program, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0)) || want == 0 || program != want) {
+  if (R_FAILED(svcGetInfo(&program, InfoType_ProgramId, CUR_PROCESS_HANDLE, 0)) || want == 0 ||
+      (program != want && !SphairaForwarderOfThisNro(program))) {
     char text[160];
     std::snprintf(text, sizeof(text), "not written: running as %016llX, not the forwarder %016llX",
                   (unsigned long long)program, (unsigned long long)want);
@@ -657,6 +687,7 @@ int RexSwitchEnsureForwarderNpdm(void) {
 }
 
 bool RexSwitchSystemCoreXma(void) { return RexSwitchSystemCore() >= 0 && REXCVAR_GET(banjo_system_core_xma); }
+bool RexSwitchSystemCoreAudioOutput(void) { return RexSwitchSystemCore() >= 0 && REXCVAR_GET(banjo_system_core_audio_output); }
 int RexSwitchSystemCoreMixerPriority(void) { return REXCVAR_GET(banjo_system_core_mixer_priority); }
 
 void RexSwitchSystemCoreDescribe(char* out, size_t out_len) {

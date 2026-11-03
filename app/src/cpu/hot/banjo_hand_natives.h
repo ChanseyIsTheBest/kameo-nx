@@ -61,6 +61,7 @@ enum : uint32_t {
   kMemcpy,
   kMemset,
   kConstants,
+  kMatrix,
   kNatives
 };
 extern uint8_t g_state[kNatives];
@@ -349,5 +350,97 @@ template <class S>
   return constants::Upload(ctx, base, s, 376, 24);
 }
 }  // namespace n_820C9D80
+
+// kameo-nx (2026-11-03, the second console profile; the evidence is in hand.txt). The game's two 4x4 matrix multiplies:
+//   sub_820E0CE0: r3 = A, r4 = B, r5 = out: out = B x A, row by row;
+//   sub_820E0DC8: the same with the result transposed (the bone palette's form, called in a loop by sub_820E5100).
+// The generated statements transpose A, take sixteen dot products (vmsum4fp128: simde_mm_dp_ps, a multiply, two faddp and a
+// dup each, and only one lane of the sixteen results is used), and shuffle the sixteen results back together. What each
+// result is, read from those statements, with k the guest's word in a row:
+//     (B x A)[j][i] = (B[j][3] * A[3][i] + B[j][2] * A[2][i]) + (B[j][1] * A[1][i] + B[j][0] * A[0][i])
+// (faddp pairs the host's lanes 0-1 and 2-3, and the 16-byte swap puts the guest's word 3 in lane 0.) Here the same multiplies
+// and the same additions in the same pairs, four results at a time: no transpose of A, no dup, no shuffles of results.
+// Facts used:
+//   * all eight loads come before the first store, as there: out may be A or B;
+//   * every address is (register + 16 k) & ~15 on the 32-bit part: the rows of one matrix are contiguous. Ranges that wrap
+//     around 4 GB are DECLINED;
+//   * flush mode goes on before the multiplies and stays on, as there (the same statement);
+//   * a multiply or an add of two NaNs returns the first operand's: GCC already treats both as commutative, so the
+//     generated code does not fix that order either, and a NaN stays a NaN.
+// Scratch not reproduced (hand.txt): r3, r4, r6-r11, v0-v13. r5 is not written by the originals, and sub_820E5100 reads it
+// after the call. Off AArch64 the natives decline (the PC runs the generated copies).
+namespace matrix {
+
+// Whether this call is the native's (a, b and out are the registers). Apply writes the result. They take the three values
+// themselves so that sub_820E5100's loop (tools/hand_copies.py) hands no register over through the context.
+[[gnu::always_inline]] inline bool Ready([[maybe_unused]] uint32_t a, [[maybe_unused]] uint32_t b, [[maybe_unused]] uint32_t out) {
+#if defined(__aarch64__)
+  if (!On(kMatrix)) [[unlikely]] return false;
+  return detail::Straight(a & ~15u, 64) && detail::Straight(b & ~15u, 64) && detail::Straight(out & ~15u, 64);
+#else
+  return false;
+#endif
+}
+
+template <bool kTranspose, class S>
+[[gnu::always_inline]] inline void Apply(PPCContext& __restrict ctx, uint8_t* base, [[maybe_unused]] S& s, uint32_t reg_a,
+                                         uint32_t reg_b, uint32_t reg_out) {
+#if defined(__aarch64__)
+  const uint32_t a = reg_a & ~15u, b = reg_b & ~15u, out = reg_out & ~15u;
+  s.Hand(kMatrix, 64);
+  const uint8_t* const pa = ::banjo::hot::Raw(base, a);
+  const uint8_t* const pb = ::banjo::hot::Raw(base, b);
+  // Lane k is the guest's word k.
+  const auto row = [](const uint8_t* p) { return vreinterpretq_f32_u8(vrev32q_u8(vld1q_u8(p))); };
+  const float32x4_t a0 = row(pa), a1 = row(pa + 16), a2 = row(pa + 32), a3 = row(pa + 48);
+  const float32x4_t b0 = row(pb), b1 = row(pb + 16), b2 = row(pb + 32), b3 = row(pb + 48);
+  ctx.fpscr.enableFlushMode();
+  const auto times = [&](float32x4_t r) {
+    return vaddq_f32(vaddq_f32(vmulq_laneq_f32(a3, r, 3), vmulq_laneq_f32(a2, r, 2)),
+                     vaddq_f32(vmulq_laneq_f32(a1, r, 1), vmulq_laneq_f32(a0, r, 0)));
+  };
+  float32x4_t r0 = times(b0), r1 = times(b1), r2 = times(b2), r3 = times(b3);
+  if constexpr (kTranspose) {
+    const float32x4x2_t low = vtrnq_f32(r0, r1), high = vtrnq_f32(r2, r3);
+    r0 = vcombine_f32(vget_low_f32(low.val[0]), vget_low_f32(high.val[0]));
+    r1 = vcombine_f32(vget_low_f32(low.val[1]), vget_low_f32(high.val[1]));
+    r2 = vcombine_f32(vget_high_f32(low.val[0]), vget_high_f32(high.val[0]));
+    r3 = vcombine_f32(vget_high_f32(low.val[1]), vget_high_f32(high.val[1]));
+  }
+  if (!s.Note(out, 64)) [[unlikely]] return;
+  ::banjo::hot::Card(base, out, 64);
+  uint8_t* const d = ::banjo::hot::Raw(base, out);
+  vst1q_u8(d, vrev32q_u8(vreinterpretq_u8_f32(r0)));
+  vst1q_u8(d + 16, vrev32q_u8(vreinterpretq_u8_f32(r1)));
+  vst1q_u8(d + 32, vrev32q_u8(vreinterpretq_u8_f32(r2)));
+  vst1q_u8(d + 48, vrev32q_u8(vreinterpretq_u8_f32(r3)));
+#else
+  (void)ctx;
+  (void)base;
+  (void)reg_a;
+  (void)reg_b;
+  (void)reg_out;
+#endif
+}
+
+}  // namespace matrix
+
+namespace n_820E0CE0 {
+template <class S>
+[[gnu::always_inline]] inline bool Native(PPCContext& __restrict ctx, uint8_t* base, S& s) {
+  if (!matrix::Ready(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) [[unlikely]] return false;
+  matrix::Apply<false>(ctx, base, s, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+  return true;
+}
+}  // namespace n_820E0CE0
+
+namespace n_820E0DC8 {
+template <class S>
+[[gnu::always_inline]] inline bool Native(PPCContext& __restrict ctx, uint8_t* base, S& s) {
+  if (!matrix::Ready(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) [[unlikely]] return false;
+  matrix::Apply<true>(ctx, base, s, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+  return true;
+}
+}  // namespace n_820E0DC8
 
 }  // namespace banjo::hand

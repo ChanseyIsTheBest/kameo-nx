@@ -107,6 +107,11 @@ REXCVAR_DEFINE_BOOL(banjo_hand_constants, true, "Banjo/Enhancements",
                     "the vectors and the dirty-mask update instead of the emulated unaligned vector loads; checked "
                     "by the guards of the hooks that contain them")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(banjo_hand_matrix, true, "Banjo/Enhancements",
+                    "kameo-nx: hand-written native of the game's two 4x4 matrix multiplies: the same multiplies and "
+                    "additions four results at a time instead of sixteen dot products and their shuffles; checked by "
+                    "the guards of the hooks that contain them")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 REXCVAR_DEFINE_BOOL(banjo_hand_state_flush, true, "Banjo/Enhancements",
                     "Hand-written native of the two writers of Direct3D's state flush (dirty register words and "
@@ -134,14 +139,17 @@ namespace banjo::hand {
 uint8_t g_state[kNatives] = {};
 
 namespace {
-constexpr const char* kNames[kNatives] = {"C runtime memcpy", "C runtime memset", "shader float-constant writers"};
-constexpr const char* kKeys[kNatives] = {"banjo_hand_memcpy", "banjo_hand_memset", "banjo_hand_constants"};
+constexpr const char* kNames[kNatives] = {"C runtime memcpy", "C runtime memset", "shader float-constant writers",
+                                          "4x4 matrix multiplies"};
+constexpr const char* kKeys[kNatives] = {"banjo_hand_memcpy", "banjo_hand_memset", "banjo_hand_constants",
+                                         "banjo_hand_matrix"};
 // kameo-nx: each native adds its enum value, its name, its key and its case here (hot/hand.txt: from a console profile).
 bool Own(uint32_t which) {
   switch (which) {
     case kMemcpy: return REXCVAR_GET(banjo_hand_memcpy);
     case kMemset: return REXCVAR_GET(banjo_hand_memset);
     case kConstants: return REXCVAR_GET(banjo_hand_constants);
+    case kMatrix: return REXCVAR_GET(banjo_hand_matrix);
   }
   return false;
 }
