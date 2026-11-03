@@ -46,6 +46,15 @@ is 05E750DF55751000. The log's "[banjo] system core:" line says whether the four
 On the fourth core: only the Audio Worker and the shader compiler, the compiler held to 10 % of it. Everything else stays on
 the other three. Delete that main.npdm to go back to three cores.
 
+Cheat codes (from Kameo: RePowered)
+
+On any pause or options page, eight presses. A sound plays when it works, and an Extras line then appears at the end of Game Options for good.
+  Level Select             LB RB LB RB X Y X Y
+  Unlock All Extras        X X Y Y LB LB RB RB
+  All Warriors & Upgrades  Y X Y X RB LB RB LB
+  Collectibles (tracker)   X Y LB RB X Y LB RB
+The two cheats are toggles on the Extras page. What you unlock and turn on is kept in kameo_codes.txt next to the NRO, so a new package does not lose it.
+
 Console profile
 ---------------
 The ELF (kameo-nx.elf) and the source snapshot (source_<commit>.tgz) are the ones this NRO was built from. A console

@@ -339,6 +339,29 @@ Ten changes, each exact by the argument given, each with its own key, on by defa
 
 Ridge Racer 6's session reports a deko3d fault for indexed strips with 0xFFFF restart markers in the range draw path (their `rr6_strip_markers`): huge wedges for a few frames after a mesh first appears. Not in this build. Whether Kameo has it is not tested yet: about 17 % of its draws go through that path.
 
+## The cheat codes (2026-11-03, night)
+
+The user asked for Kameo: RePowered's four codes. `app/src/kameo_codes.cpp` and `kameo_collectibles.inc`, adapted from its `src/ui/pause_menu/`, `src/ui/text_window.cpp` and `src/engine/` (MIT, `THIRD_PARTY_NOTICES.md`). Eight presses on any pause or options page, a sound, and an "Extras" line appears at the end of Game Options for good. With no code entered no page changes, and no picture changes.
+
+| Code | Presses | What it adds |
+|---|---|---|
+| Level Select | LB RB LB RB X Y X Y | 13 chapters, each with its tasks; a confirmation with the cursor on Cancel |
+| Unlock All Extras | X X Y Y LB LB RB RB | a toggle: events 485-526, the mirror's unlockables, answer done |
+| All Warriors & Upgrades | Y X Y X RB LB RB LB | a toggle: the ten warriors in the sack, move events 239-278 answer done |
+| Collectibles | X Y LB RB X Y LB RB | the tracker: this area, the whole game, and how many were missed |
+
+Choices live in `kameo_codes.txt` next to the NRO, not in `kameo.toml`, so a new package does not lose them. `kameo_cheat_codes = false` removes it all; `kameo_codes_test_unlock` unlocks for tests without saving.
+
+What differs from RePowered, which is written against the original game:
+
+- **The title update's own code decided every address that mattered**, not the maps. The maps were wrong in three places: the cost table's rows are 16 bytes (12 in the original), the task jump's four words are 828E1F0C-828E1F18, and its last stores are 64-bit.
+- **All Warriors exists here though RePowered has not ported it to the update.** `kaiSackPopulate` (821A3FF8) adds each warrior by name after its story event, and the add (821A3C30) refuses a duplicate, so adding all ten after it is safe. The names are the game's own strings.
+- **`eventDone` is not hooked.** It is a machine copy, inlined in 23 others. `tools/hand_copies.py` gives the copy one test of a flag instead. **So the two cheats depend on `banjo_cpu_native_bulk`, and a guard run with a cheat on will report differences for that function.** With both off the guard compares as before.
+- **The pause closes by the owner's Start press** set in the pressed word for one call of 82278C30, not by writing its state as RePowered does: the update's close path also calls 822AF990, and this way the game's own path runs whatever it holds.
+- **Left out:** RePowered's Options pages, tribe shop sales, translations (English labels), and its cheat guard (leaderboard mark, save backup): this port has no leaderboards, and both cheats need a deliberate toggle after the code.
+
+**Tested: not yet.** It compiles, and `nm` finds the eight hooks and the flag in the binary. No run has entered a code: `emu60codes` and `emu61codes` used up their time before the script's first Start (the script's clock runs at about a third of the wall's in gameplay on this loaded machine), and the user chose to test on the console, so `emu62codes` was stopped. The scripted test is in `out/emu/emu_codes.toml` if it is wanted: gameplay is on screen by 160 s of the script's clock, so allow over 20 minutes.
+
 ## Enhancements audit (2026-11-02)
 
 `tools/enhancement_gap.py` and `tools/enhancement_state.py` against banjo-nx's `enhancements-reference.md`: 260 keys there, 245 defined here; of the 139 rows of "Every key", 135 ship as the reference does.

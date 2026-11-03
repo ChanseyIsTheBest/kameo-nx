@@ -75,6 +75,8 @@ endif()
 set(RENUT_SOURCES
     src/main.cpp
     src/kameo_keys.cpp
+    # kameo-nx (2026-11-03): Kameo: RePowered's cheat codes.
+    src/kameo_codes.cpp
     src/kameo_fp_guard.cpp
     # katamari-nx (2026-10-31): DLC packages in the "dlc" folder next to the NRO installed at start (reNut upstream's).
     src/renut_engine/dlc_install.cpp

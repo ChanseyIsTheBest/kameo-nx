@@ -175,7 +175,25 @@ def patch_820E5100(name, body):
     ])
 
 
-PATCHES = {'sub_82379E10': patch_82379E10, 'sub_82524E98': patch_82524E98, 'sub_820E5100': patch_820E5100}
+# sub_822F3CB8, eventDone: Kameo: RePowered's cheat codes (app/src/kameo_codes.cpp) answer for some events while a cheat is on. Inlined
+# in 23 copies and reached by every other caller through this copy's hook, so one test of a flag here costs a load where a hook
+# would have made a real call of all of those. With a cheat on the guard would see the difference it is meant to see.
+def patch_822F3CB8(name, body):
+    if not body or not body[0][0].startswith('\ts.Hit('):
+        sys.exit(f'hand_copies: {name}: the body does not start with its block count')
+    block = body[0][1]
+    return body[:1] + [(line, block) for line in [
+        '\tif (::g_kameo_event_cheats) [[unlikely]] {',
+        '\t\tif (::KameoEventCheated(ctx.r3.u32)) {',
+        '\t\t\tctx.r3.u64 = 1;',
+        '\t\t\treturn;',
+        '\t\t}',
+        '\t}',
+    ]] + body[1:]
+
+
+PATCHES = {'sub_82379E10': patch_82379E10, 'sub_82524E98': patch_82524E98, 'sub_820E5100': patch_820E5100,
+           'sub_822F3CB8': patch_822F3CB8}
 
 # Registers a function's copy leaves in the context instead of a local of its own. The original statements' own form, so exact
 # by construction. For a function with real calls and few uses of the register: the copy syncs each local around every call

@@ -3,7 +3,37 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package, from your third console run (docs/console-run-3-2026-11-03.md, docs/kameo-notes.md in the source):
+New in this package: Kameo: RePowered's four cheat codes. Nothing else changed since rc8.
+
+NOT TESTED. No run has reached them: the emulator test was stopped before its first press, because you are testing them on the console.
+The code compiles and the hooks are in the binary. That is all that is known. A wrong address would show up here first.
+
+Enter these on any pause or options page, eight presses. A sound plays when it works.
+  Level Select             LB RB LB RB X Y X Y
+  Unlock All Extras        X X Y Y LB LB RB RB
+  All Warriors & Upgrades  Y X Y X RB LB RB LB
+  Collectibles (tracker)   X Y LB RB X Y LB RB
+
+BACK UP YOUR SAVE before you try Level Select. Starting from a task sets the story to that point and saves the game. Collectibles are kept, the story position is not.
+
+What to try, in this order, in gameplay:
+1. Pause and enter a code. You should hear the sound.
+2. Go into Game Options. There should be an Extras line at the end. With no code entered it must not be there, and that page should look as it always has.
+3. Open Extras. Turn Unlock All Extras and All Warriors & Upgrades on and off, and check that the value changes and the cursor stays put.
+4. Open Collectibles and check the counts look sensible. B goes back.
+5. Open Level Select, pick a chapter, pick a task. The confirmation opens on Cancel. Try Cancel, then Start. The pause should close and the task should load.
+6. With All Warriors on, start a level and check the warriors are in the sack. With Unlock All Extras on, look at the extras menu.
+7. Turn the console off and on: what you unlocked and turned on should still be there.
+
+What to send me if something goes wrong: which step, what you saw, and renut_001.log. Its lines start "[kameo] cheat code entered" and "[kameo] level select".
+
+Good to know:
+- The two cheats only work with banjo_cpu_native_bulk on, which is the default.
+- kameo_codes.txt next to the NRO holds what you unlocked. Delete it to start over. kameo_cheat_codes = false in kameo.toml removes the feature.
+- Labels are in English only. RePowered's Options pages, its tribe shop sales and its cheat guard (a leaderboard mark and a save backup) are not ported.
+- If a code seems to do nothing, it may already be unlocked: a code only plays its sound the first time.
+
+From the last package (rc8), still worth your console's time: your third console run (docs/console-run-3-2026-11-03.md, docs/kameo-notes.md in the source):
 - Ten GPU changes, none meant to change a pixel: colour resolves left in the target's image (banjo_deko3d_color_handover), the frame's last
   resolve scanned out with no copy (banjo_deko3d_scanout_handover), depth sampled while a draw only tests it (banjo_deko3d_depth_handover_sampled,
   banjo_deko3d_depth_read_layout), the gamma ramp copied only when it changes (banjo_renut_gamma_upload_once) and in a smaller format, a cheaper scan-out

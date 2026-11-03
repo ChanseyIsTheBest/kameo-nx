@@ -22,6 +22,10 @@
 #include <rex/system/xmemory.h>  // banjo-nx (2026-10-19): rex::memory::MarkStoreCardsAt
 #include <rex/ppc/context.h>
 
+// kameo-nx (2026-11-03): the cheat codes' answers for eventDone (kameo_codes.cpp, tools/hand_copies.py): the copy tests the flags.
+extern uint8_t g_kameo_event_cheats;
+bool KameoEventCheated(uint32_t event);
+
 namespace banjo::hand {
 // banjo_hot_count: one call of a hand-written native (hot/banjo_hand_natives.h) with its size (banjo_hot_guest.cpp).
 void Count(uint32_t which, uint32_t n);
