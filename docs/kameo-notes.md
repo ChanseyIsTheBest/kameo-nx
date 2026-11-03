@@ -220,7 +220,52 @@ All four packs install through the base's installer on both builds (Kameo Add-On
 
 `emu11prof` (03:30, 480 s, the current NRO, chain on, A-only script, captures): **logo, title, menus, opening movie and 4 minutes in Thorn's Castle, no hang.** The game warns about overwriting the save the earlier run made, which is right. Render thread about 89 ms a frame, 10 fps, against 48-77 ms and 12-19 fps in `emu5prof` and `emu6prof`. Whether that is the chain or the machine cannot be told across runs (mean CPU 75 %, up to 9 compiler processes, free commit 6.3 GB), so the chain now has an in-run target, A/B 71.
 
-`emu12ab` (03:41, 18 minutes, `renut_ab.toml`): every target printed, no hang with target 71 flipping the chain on and off. **Nothing could be judged from it.** The list starts at boot, so targets 71, 25, 28, 22, 33 and 42 fell across changing screens (menus, movie, load). The two measured in gameplay: 70, the copies, 88.9 ms on and 87.0 ms off; 1, the do-nothing control, 99.0 ms on and 102.0 ms off. The control's own spread is larger than the copies' difference, with the machine at a mean of 87 % CPU and up to 20 compiler processes from other ports. Neither the copies nor the chain are shown to gain or lose time. The console decides.
+`emu12ab` (03:41, 18 minutes, `renut_ab.toml`): every target printed. **Correction (2026-11-03): I wrote "no hang" here and it did hang.** Frames stopped at 17:49:31 and the log ran on to 17:55:42 with none, the Main XThread and the workers parked in the job queue's wait; see "The emulator freeze" below. **Nothing could be judged from it.** The list starts at boot, so targets 71, 25, 28, 22, 33 and 42 fell across changing screens (menus, movie, load). The two measured in gameplay: 70, the copies, 88.9 ms on and 87.0 ms off; 1, the do-nothing control, 99.0 ms on and 102.0 ms off. The control's own spread is larger than the copies' difference, with the machine at a mean of 87 % CPU and up to 20 compiler processes from other ports. Neither the copies nor the chain are shown to gain or lose time. The console decides.
+
+## The round after the first console profile (2026-11-03)
+
+The evidence is `docs/console-run-2026-11-03.md`: 27.8 fps without compile waits, 22.7 fps overall, 34.1 s of 252 s blocked on 79 shader compiles, and the game's drawing thread the limit at 94 % of a core. No frame rate below is from a console: this round has not run on one.
+
+**Machine copies: 336 to 4,089.** The 110 held back are in the build at the user's request (below, how many of them the guard could compare), plus 553 sampled on the console and 3,090 they call, followed to a fixed point. 48 compile units instead of 12, because GCC ran out of commit memory on a shared machine. NRO 54.8 to 99.5 MB, about 11 KB a copy. About 10,100 eligible functions are still not copied: none has a sample on any machine, and they would take the NRO to roughly 210 MB. That is the user's decision.
+
+**Hand work, in `app/src/cpu/hot/` and `tools/hand_copies.py`.** The user asked for the top 6 of the drawing thread. By samples they are:
+
+| Function | Share of the thread | What was done |
+|---|---|---|
+| `CaptureDelta` | 15.3 % | One check for up to 8 lines (`LinesAnyDiffer`), then line by line only in a run that differs. 75 % of its samples were the compare, most of them the horizontal max, the move to a general register and the branch, once a line. |
+| `sub_82379E10` | 7.9 % | A hand edit of the copy: rejected elements in a loop of their own, with no float reloads, and a prefetch 8 elements ahead. |
+| `sub_82110280` | 5.2 % | **Nothing by hand.** A dispatcher on a state id, 85 % of its samples on loads, none over 6.5 % in one place. It gains only from the memset native inside it. |
+| `sub_820E7F10` | 4.7 % | **Machine copy only.** A 49-way command interpreter with 32 real calls. Threaded dispatch would mean a per-file compiler flag, for a gain I could not estimate. |
+| `sub_8231C268` | 3.2 % | **Nothing of its own.** No instruction over 3 of its 232 samples. It gains from the memcpy and constant natives inside it. |
+| `sub_820C9C38`, `sub_820C9D80` | 2.7 %, and its pair | Native: a plain copy and the dirty mask, instead of emulated unaligned vector loads and a card per vector. |
+
+Also native, because they sit inside those: memcpy (`sub_8255D400`) and memset (`sub_82554238`). Each was read against this game's statements, since XDK 2.0.2135 compiled them differently from N&B's.
+
+`tools/hand_copies.py` is new: an edit of a copy's statements, applied to `f_` only, so `o_` stays the original and the guard compares the two. It stops if the code generation changes the statements it expects.
+
+**Shader compile stalls.** The package never shipped the PC-built cache `tools/deko3d_variant_cache.py --generic` makes, so every shader not yet seen compiled on the console. It now does: 8,379 variants, 33 MB, from every shader's generic variant, the console's pipeline list and its log. All 797 variants compiled on both the PC and the console are byte-identical. `deko3d_shaders.idx` keeps that many records from slowing each boot; a wrong or stale index falls back to the walk. uam itself is no faster. A pooled allocator looked like 30 % of its time, but its results are freed by code using the normal allocator, a memory corruption risk not worth taking for compiles that should now be rare.
+
+**Checked in the emulator** (Ryujinx, a shared machine; correctness only):
+
+| Run | Settings | Result |
+|---|---|---|
+| `emu30guard` | Guard and every verify key | 4.6 million calls compared, 4.4 million not comparable, **0 differences**, 119 that differed once and not when repeated. 11.87 million draws through the device snapshot check, **0 differ**. 0 compiles, 0 waits. |
+| `emu31plain`, `emu33plain`, `emu34plain` | No guard | 0 compiles, 0 waits. Wall 20.7 where the old build had 20.6, lilac about 1 %. |
+| `emu32plain` | No guard | **Froze** (below). |
+
+1,919 of 4,084 copies were reached, and 929 had a compared call. Compared: `sub_82379E10`, both constant writers, memcpy, memset, `sub_82110280`, `sub_8231C268`. **Not compared, every call hit a real call: `sub_820E7F10`, `sub_8233F578`, `sub_82524E98`.** So those run on the tool's correctness alone, as the user chose.
+
+### The emulator freeze
+
+`emu32plain` stopped drawing at 13:34 and did not recover in the 6.5 minutes left. The process lived. The Main XThread blocks with an infinite wait in `sub_82264F40`'s queue for the end of the frame, the drawing thread waits on its own queue for its next job, the render thread has nothing to do, and the workers are idle: each waits on the other, so a message or a semaphore signal was lost. **The cause is not known.**
+
+- It is not new: `emu12ab`, a 53 MB build from before this round, did the same (frames stop, log runs on 371 s, the same queue wait). So did `emu8` in part. That is 1 of 5 runs on this build against 1 or 2 of 26 before, which is too few to say the rate changed.
+- Every case had heavy host load (`emu32plain`: 100 % CPU, free commit down to 0.5 GB, 20,000 pages a second).
+- `thread_signal_skip_idle` is cleared by reading it: the waiter count and the state change under one mutex, so a signaller that sees no waiter is safe.
+- It has not been seen on a console. Only one console run exists, 6.5 minutes on the old build.
+- The separate collapse in `emu31plain` and `emu8`, under 1 fps with every thread 30-40 times slower at once, recovers by itself and looks like the machine: nothing of the port stood out in the stacks. That is an inference from the stacks, not a test.
+
+If a console freezes this way, the first test is `banjo_cpu_native_bulk = false` in `kameo.toml`, to separate the copies from the rest.
 
 `emu13docked` (04:01, 600 s): **docked at 1080 lines reaches Thorn's Castle with no crash**: render targets 65 MB at x1.5, textures 187 MB, GPU region peak 1,072 MB.
 

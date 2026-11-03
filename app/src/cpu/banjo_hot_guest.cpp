@@ -134,11 +134,17 @@ namespace banjo::hand {
 uint8_t g_state[kNatives] = {};
 
 namespace {
-constexpr const char* kNames[kNatives] = {"none"};
-constexpr const char* kKeys[kNatives] = {"none"};
-// kameo-nx: no hand-written native yet (hot/hand.txt: only from a console profile). Each one adds its enum value,
-// its name, its key and its case here.
-bool Own(uint32_t) { return false; }
+constexpr const char* kNames[kNatives] = {"C runtime memcpy", "C runtime memset", "shader float-constant writers"};
+constexpr const char* kKeys[kNatives] = {"banjo_hand_memcpy", "banjo_hand_memset", "banjo_hand_constants"};
+// kameo-nx: each native adds its enum value, its name, its key and its case here (hot/hand.txt: from a console profile).
+bool Own(uint32_t which) {
+  switch (which) {
+    case kMemcpy: return REXCVAR_GET(banjo_hand_memcpy);
+    case kMemset: return REXCVAR_GET(banjo_hand_memset);
+    case kConstants: return REXCVAR_GET(banjo_hand_constants);
+  }
+  return false;
+}
 // banjo_hot_count: calls by size, bucket 0 = size 0, bucket k = sizes [2^(k-1), 2^k).
 std::atomic<uint64_t> g_sizes[kNatives][34];
 }  // namespace

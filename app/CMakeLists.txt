@@ -118,6 +118,42 @@ set(RENUT_SOURCES
     src/cpu/banjo_hot_shard_9.cpp
     src/cpu/banjo_hot_shard_10.cpp
     src/cpu/banjo_hot_shard_11.cpp
+    src/cpu/banjo_hot_shard_12.cpp
+    src/cpu/banjo_hot_shard_13.cpp
+    src/cpu/banjo_hot_shard_14.cpp
+    src/cpu/banjo_hot_shard_15.cpp
+    src/cpu/banjo_hot_shard_16.cpp
+    src/cpu/banjo_hot_shard_17.cpp
+    src/cpu/banjo_hot_shard_18.cpp
+    src/cpu/banjo_hot_shard_19.cpp
+    src/cpu/banjo_hot_shard_20.cpp
+    src/cpu/banjo_hot_shard_21.cpp
+    src/cpu/banjo_hot_shard_22.cpp
+    src/cpu/banjo_hot_shard_23.cpp
+    src/cpu/banjo_hot_shard_24.cpp
+    src/cpu/banjo_hot_shard_25.cpp
+    src/cpu/banjo_hot_shard_26.cpp
+    src/cpu/banjo_hot_shard_27.cpp
+    src/cpu/banjo_hot_shard_28.cpp
+    src/cpu/banjo_hot_shard_29.cpp
+    src/cpu/banjo_hot_shard_30.cpp
+    src/cpu/banjo_hot_shard_31.cpp
+    src/cpu/banjo_hot_shard_32.cpp
+    src/cpu/banjo_hot_shard_33.cpp
+    src/cpu/banjo_hot_shard_34.cpp
+    src/cpu/banjo_hot_shard_35.cpp
+    src/cpu/banjo_hot_shard_36.cpp
+    src/cpu/banjo_hot_shard_37.cpp
+    src/cpu/banjo_hot_shard_38.cpp
+    src/cpu/banjo_hot_shard_39.cpp
+    src/cpu/banjo_hot_shard_40.cpp
+    src/cpu/banjo_hot_shard_41.cpp
+    src/cpu/banjo_hot_shard_42.cpp
+    src/cpu/banjo_hot_shard_43.cpp
+    src/cpu/banjo_hot_shard_44.cpp
+    src/cpu/banjo_hot_shard_45.cpp
+    src/cpu/banjo_hot_shard_46.cpp
+    src/cpu/banjo_hot_shard_47.cpp
     src/profiler/banjo_pc_profiler.cpp
     # PNG captures of the presented game image (nfsmw_captura_cada_s), from nfsmw-nx: for testing.
     src/native/nfsmw_nativo_captura.cpp
@@ -214,6 +250,42 @@ set(BANJO_HOT_SOURCES src/cpu/banjo_hot_guest.cpp
     src/cpu/banjo_hot_shard_9.cpp
     src/cpu/banjo_hot_shard_10.cpp
     src/cpu/banjo_hot_shard_11.cpp
+    src/cpu/banjo_hot_shard_12.cpp
+    src/cpu/banjo_hot_shard_13.cpp
+    src/cpu/banjo_hot_shard_14.cpp
+    src/cpu/banjo_hot_shard_15.cpp
+    src/cpu/banjo_hot_shard_16.cpp
+    src/cpu/banjo_hot_shard_17.cpp
+    src/cpu/banjo_hot_shard_18.cpp
+    src/cpu/banjo_hot_shard_19.cpp
+    src/cpu/banjo_hot_shard_20.cpp
+    src/cpu/banjo_hot_shard_21.cpp
+    src/cpu/banjo_hot_shard_22.cpp
+    src/cpu/banjo_hot_shard_23.cpp
+    src/cpu/banjo_hot_shard_24.cpp
+    src/cpu/banjo_hot_shard_25.cpp
+    src/cpu/banjo_hot_shard_26.cpp
+    src/cpu/banjo_hot_shard_27.cpp
+    src/cpu/banjo_hot_shard_28.cpp
+    src/cpu/banjo_hot_shard_29.cpp
+    src/cpu/banjo_hot_shard_30.cpp
+    src/cpu/banjo_hot_shard_31.cpp
+    src/cpu/banjo_hot_shard_32.cpp
+    src/cpu/banjo_hot_shard_33.cpp
+    src/cpu/banjo_hot_shard_34.cpp
+    src/cpu/banjo_hot_shard_35.cpp
+    src/cpu/banjo_hot_shard_36.cpp
+    src/cpu/banjo_hot_shard_37.cpp
+    src/cpu/banjo_hot_shard_38.cpp
+    src/cpu/banjo_hot_shard_39.cpp
+    src/cpu/banjo_hot_shard_40.cpp
+    src/cpu/banjo_hot_shard_41.cpp
+    src/cpu/banjo_hot_shard_42.cpp
+    src/cpu/banjo_hot_shard_43.cpp
+    src/cpu/banjo_hot_shard_44.cpp
+    src/cpu/banjo_hot_shard_45.cpp
+    src/cpu/banjo_hot_shard_46.cpp
+    src/cpu/banjo_hot_shard_47.cpp
 )
 if(BANJO_GENERATED_MATH_FLAGS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set_property(SOURCE ${BANJO_HOT_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -fno-math-errno)

@@ -51,8 +51,12 @@ Copy-Item (Join-Path $dist "renut.toml") (Join-Path $sd "kameo.toml")
 Copy-Item (Join-Path $dist "renut.toml"), (Join-Path $dist "renut_play.toml"), (Join-Path $dist "renut_ab.toml") (Join-Path $sd "configs")
 Copy-Item (Join-Path $dist "configs\*.toml") (Join-Path $sd "configs")
 $cache = Join-Path $root "out\deko3d_shaders\deko3d_shaders.bin"
-if (Test-Path $cache) { Copy-Item $cache $sd }
-if ($Caches) { Copy-Item (Join-Path $Caches "deko3d_shaders.bin"), (Join-Path $Caches "pipeline_list.bin") $sd }
+if (Test-Path $cache) { Copy-Item $cache, ([IO.Path]::ChangeExtension($cache, ".idx")) $sd }
+# kameo-nx (2026-11-03): the pipeline list from a console or emulator folder; its DKSH cache only when no prebuilt one exists.
+if ($Caches) {
+    Copy-Item (Join-Path $Caches "pipeline_list.bin") $sd
+    if (-not (Test-Path $cache)) { Copy-Item (Join-Path $Caches "deko3d_shaders.bin") $sd }
+}
 if ($GameRoot) {
     $need = ((Get-ChildItem $GameRoot -Recurse -File | Measure-Object -Sum Length).Sum + 1GB) / 1GB
     if ((Get-PSDrive D).Free / 1GB -lt $need) { throw ("D: has too little space for the game files ({0:N1} GB needed)" -f $need) }

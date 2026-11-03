@@ -4,4 +4,8 @@
 #
 #   <address or generated name> [id=<namespace suffix>] [exact=<registers>]   # evidence
 #
-# None yet: no console profile of this game exists.
+# Console run of 2026-11-03 (package rc2_ready, Thorn's Castle, handheld at stock clocks; docs/console-run-2026-11-03.md).
+8255D400 exact=r3   # C runtime memcpy. Inside sub_8231C268 and others on the drawing thread; byte-swapped word and doubleword moves
+82554238   # C runtime memset. Top of the emulator lists, inside sub_82265300 and sub_82110280: table lookups to build one byte, a store and card per 16 bytes
+820C9C38   # Direct3D vertex shader float-constant writer. Drawing thread 2.7 %: emulated unaligned vector loads and a card per vector
+820C9D80   # Direct3D pixel shader float-constant writer. The same routine with (r4 + 376) and the mask at r3 + 24

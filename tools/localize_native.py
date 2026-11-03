@@ -57,6 +57,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hand_copies  # noqa: E402  (kameo-nx: hand edits of a copy's statements)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, 'app')
 GEN = os.path.join(APP, 'generated')
@@ -65,7 +68,7 @@ IMAGE = os.path.join(ROOT, 'out', 'renut_image.bin')
 INDEX = os.path.join(ROOT, 'out', 'localize_index.json')
 LIST = os.path.join(APP, 'src', 'cpu', 'hot', 'localized.txt')
 BULK = os.path.join(APP, 'src', 'cpu', 'hot', 'localized_bulk.txt')
-SHARDS = 12  # app/src/cpu/banjo_hot_shard_<k>.cpp (app/CMakeLists.txt lists them)
+SHARDS = 48  # app/src/cpu/banjo_hot_shard_<k>.cpp (app/CMakeLists.txt lists them)
 BULK_SLOT = 9999  # past PPCContext::host_counters: the guard's countdown is the hook's own (banjo_hot_guest.h)
 HAND = os.path.join(APP, 'src', 'cpu', 'hot', 'hand.txt')
 IMAGE_BASE = 0x82000000
@@ -915,6 +918,7 @@ def localize(index, hooks, reach, root, what, opts, out_dir, quiet=False, hand=N
                 if stores:
                     body.append(('\tif (s.Stopped()) return;', block))
             if localized:
+                body = hand_copies.apply(name, body)  # kameo-nx: hand edits of f_ only; o_ stays the original
                 how = ('[[gnu::always_inline]] static inline' if name in forced
                        else '[[gnu::noinline, gnu::cold]] static' if name in hand else 'static')
                 head = (f'template <class S>\n{how} '

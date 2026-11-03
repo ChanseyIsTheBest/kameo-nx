@@ -275,6 +275,59 @@ struct DkshCache {
 };
 DkshCache g_cache;
 
+// kameo-nx (2026-11-03): deko3d_shaders.idx, next to a cache tools/deko3d_variant_cache.py made: "BDKI", version, the tag, the
+// cache's length it covers, the count, the last record's offset and key, then (u64 key, u32 offset of the DKSH, u32 size).
+// With every shader's generic variant the cache has thousands of records, and LoadCache's walk seeks and reads each one's
+// head at every start (about 0.3 ms a record on the console's card). The walk still takes whatever lies after the part the
+// index covers, which is what the console itself appended. Returns where that starts: after the header when the index is
+// missing, or does not fit this file.
+long LoadCacheIndex(DkshCache &c, long length, long header) {
+  struct Head {
+    char magic[4];
+    uint32_t version;
+    char tag[16];
+    uint64_t covered;
+    uint64_t count;
+    uint64_t last_offset;
+    uint64_t last_key;
+  } h;
+  struct Entry {
+    uint64_t key;
+    uint32_t offset, size;
+  };
+  std::string path = c.path;
+  const size_t dot = path.rfind('.');
+  path = path.substr(0, dot) + ".idx";
+  FILE *f = std::fopen(path.c_str(), "rb");
+  if (!f)
+    return header;
+  std::vector<Entry> entries;
+  bool ok = std::fread(&h, sizeof(h), 1, f) == 1 && std::memcmp(h.magic, "BDKI", 4) == 0 && h.version == 1 &&
+            std::memcmp(h.tag, kCacheTag, sizeof(kCacheTag)) == 0 && h.covered <= uint64_t(length) &&
+            h.count && h.count <= (1u << 20);
+  if (ok) {
+    entries.resize(h.count);
+    ok = std::fread(entries.data(), sizeof(Entry), entries.size(), f) == entries.size();
+  }
+  std::fclose(f);
+  if (ok) {
+    // The last record it names is in the cache where it says: the same key, and a DKSH.
+    uint64_t key = 0;
+    uint32_t size = 0, magic = 0;
+    ok = std::fseek(c.file, long(h.last_offset) - 12, SEEK_SET) == 0 && std::fread(&key, sizeof(key), 1, c.file) == 1 &&
+         std::fread(&size, sizeof(size), 1, c.file) == 1 && std::fread(&magic, sizeof(magic), 1, c.file) == 1 &&
+         key == h.last_key && magic == kDkshMagic && h.last_offset + size == h.covered;
+  }
+  if (!ok) {
+    REXLOG_WARN("[deko3d] DKSH cache index {} does not fit the cache: reading the cache's records instead", path);
+    return header;
+  }
+  c.index.reserve(entries.size() * 2);
+  for (const Entry &e : entries)
+    c.index[e.key] = {long(e.offset), e.size};
+  return long(h.covered);
+}
+
 void LoadCache() {
   DkshCache &c = g_cache;
   // banjo-nx (2026-10-18): the code uam makes with other flags (banjo_deko3d_uam_prmt, banjo_deko3d_uam_gvn off) has a
@@ -300,7 +353,7 @@ void LoadCache() {
       // the process did not finish). The file is cut there and new records follow the good ones. Before, appends
       // went after such a record, where the next start's walk never found them: Ryujinx runs 20-22 compiled the same
       // ~30 shaders on every start.
-      long at = sizeof(head);
+      long at = LoadCacheIndex(c, length, sizeof(head));
       for (;;) {
         uint64_t key;
         uint32_t size, magic;

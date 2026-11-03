@@ -261,12 +261,24 @@ static_assert(d3d::kDeviceOffsetVertexDeclaration >= kDeltaPrivateUnreadEnd);
 struct DeltaChunkList {
   u32 count = 0;
   u8 index[128] = {};
+  // kameo-nx (2026-11-03): how many whole 64-byte chunks follow on in the device from this entry on, itself included
+  // (at most kDeltaBatchLines): CaptureDelta compares them with one check.
+  u8 run[128] = {};
 };
+constexpr u32 kDeltaBatchLines = 8;
 constexpr DeltaChunkList MakeDeltaChunkList(bool narrow) {
   DeltaChunkList l{};
   for (u32 i = 0; i < kDeltaChunks; ++i)
     if (!narrow || DeltaChunkRead(i))
       l.index[l.count++] = u8(i);
+  for (u32 k = l.count; k-- > 0;) {
+    const u32 i = l.index[k];
+    if (DeltaChunkSize(i) != kDeltaUnitBytes)
+      continue;  // run 0: compared by itself
+    const bool next = k + 1 < l.count && l.index[k + 1] == i + 1 &&
+                      DeltaChunkOffset(i + 1) == DeltaChunkOffset(i) + kDeltaUnitBytes;
+    l.run[k] = u8(next && l.run[k + 1] ? std::min(kDeltaBatchLines, l.run[k + 1] + 1u) : 1u);
+  }
   return l;
 }
 constexpr DeltaChunkList kDeltaAllChunks = MakeDeltaChunkList(false);
@@ -542,9 +554,19 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
     u32 chunks = 0;
     const DeltaChunkList &list = DeltasNarrowOn() ? kDeltaReadChunks : kDeltaAllChunks;
     const bool neon = NeonCompareOn();  // banjo-nx (from sa2-nx) (banjo_renut_neon_compare)
+    // kameo-nx (2026-11-03): runs of lines with one check; only a run that differs is gone through line by line.
+    u32 lines_until = 0;
     for (u32 k = 0; k < list.count; ++k) {
       const u32 i = list.index[k];
       const u32 at = DeltaChunkOffset(i), size = DeltaChunkSize(i);
+      if (neon && k >= lines_until && list.run[k] > 1) {
+        const u32 run = list.run[k];
+        if (!banjo::renut_gpu::LinesAnyDiffer(bytes + at, c.shadow + at, run)) {
+          k += run - 1;
+          continue;
+        }
+        lines_until = k + run;
+      }
       const bool differs = size == kDeltaUnitBytes ? banjo::renut_gpu::Line64Differs(bytes + at, c.shadow + at, neon)
                                                    : std::memcmp(bytes + at, c.shadow + at, size) != 0;
       if (!differs)

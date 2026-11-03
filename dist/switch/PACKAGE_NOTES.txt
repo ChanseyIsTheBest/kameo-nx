@@ -3,13 +3,21 @@ kameo-nx: notes for this package
 
 Nothing here has run on a real console. Ryujinx and the PC are proxies: every timing below is theirs, not the A57's.
 
-What this exact NRO has done in Ryujinx (emu15, emu24fix): Rare logo, title, menus, the opening movie and Thorn's Castle, with the four
-DLC packs installed; every verify key on: 0 differences. Handheld. An earlier build did the same docked at 1080 lines (emu13docked).
-Frame rate there is 10-19 fps on a shared PC, which says little about the console. What has not been run anywhere: past the opening of
-the first level, a DLC outfit on screen, the water cannon, co-op.
+What this exact NRO has done in Ryujinx (emu30guard to emu34plain): Rare logo, title, menus, the opening movie and Thorn's Castle. With the
+guard and every verify key on: 0 differences in 4.6 million compared calls, 0 of 11.87 million draws differ. Handheld only. Frame rate there
+says little about the console. What has not been run anywhere: past the opening of the first level, a DLC outfit on screen, the water
+cannon, co-op, and this NRO on a console.
 
-New in this package: a shader's tfetch3D on a 2D texture now samples it (banjo_renut_fetch3d_on_2d, A/B target 72). That brings back the
-sun's orange glow on the clouds through the castle window.
+New in this package, all from your console run (docs/console-run-2026-11-03.md in the source):
+- Shader compile stalls: a full cache of 8,379 variants, so draws should no longer wait for a compile (34 s of your 252 s). 0 compiles and 0
+  waits in every emulator run; on your console, read the log's "uam N compiles" and "blocking: N a draw waited for" lines.
+- 4,089 machine copies, up from 336, including the 110 held back. banjo_cpu_native_bulk = false in kameo.toml turns them all off.
+- Hand work on the drawing thread: CaptureDelta's compare, a skip loop in sub_82379E10, and natives for memcpy, memset and the constant writers
+  (banjo_hand_memcpy, banjo_hand_memset, banjo_hand_constants). sub_82110280, sub_8231C268 and sub_820E7F10 were not rewritten by hand.
+
+ONE OPEN PROBLEM: one of five emulator runs of this NRO froze for good: no frames, sound may go on, the process alive. A build from before
+these changes did the same once, always under heavy load on the PC, and the cause is not known. It has not been seen on a console. If yours
+freezes: send logs/renut_001.log and logs/rex/banjo_profiler.log, then try banjo_cpu_native_bulk = false to see whether the copies matter.
 
 Known differences from the reference (docs/kameo-notes.md has the captures): none open in the idle view of Thorn's Castle. The rings
 above the player are denser than in the reference: the game places them by frame rate, so your console's spacing will follow its own.
@@ -24,17 +32,18 @@ later level is missing geometry, tell me where: that scan does not cover draws b
 Setting up
 ----------
 A package made with -Ready has a switch folder holding everything: copy it to the root of the SD card, merging with the card's
-switch folder, and start kameo-nx from the homebrew menu. About 5.6 GB, and about 90 MB more when the DLC installs at the first
-start. Otherwise:
+switch folder, and start kameo-nx from the homebrew menu. About 5.7 GB, and about 90 MB more when the DLC installs at the first
+start. A card that already has an earlier package needs only four files, from switch/kameo-nx: kameo-nx.nro, deko3d_shaders.bin,
+deko3d_shaders.idx and pipeline_list.bin. Otherwise:
 1. Copy COPY_TO_SD_switch_kameo-nx to sdmc:/switch/kameo-nx/ .
 2. game_root/: your extracted disc, with title update 2's default.xexp next to default.xex.
 3. update/: title update 2's language folders (English, French ...).
 4. dlc/ (optional): the four DLC packages as they came, one copy of the Add-On Pack. Installed at the first start.
 5. Start the NRO.
 
-deko3d_shaders.bin and pipeline_list.bin, in a -Ready package, come from the emulator's runs of this NRO: the compiled shaders
-it has met so far, and the pipelines to build ahead. They only save compile time. Delete either to start it over; shaders it
-lacks are compiled as they come.
+deko3d_shaders.bin holds compiled shaders, built on the PC and merged with what your console compiled; deko3d_shaders.idx is its
+index, which only saves time at each start; pipeline_list.bin, from your console run, says which pipelines to build ahead. Delete
+any of them to start it over; shaders it lacks are compiled as they come.
 
 Which toml
 ----------
@@ -75,4 +84,4 @@ Turning on a console profile
 ----------------------------
 Copy configs/renut_profile.toml over kameo.toml, play the slow scene for a few minutes, and send logs/rex/rex_profile.log, the
 log, and this package's name. kameo-nx.elf and source_<commit>.tgz here are what maps its samples to source lines: keep them
-with the NRO. Hand-written natives wait for this profile; none are in this build.
+with the NRO. The kameo.toml here already samples, so one run of the same scene as your last compares the two directly.

@@ -25,6 +25,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam.exe')
@@ -78,7 +79,16 @@ def compile_one(item):
         out = os.path.join(tmp, 'v.dksh')
         with open(src, 'wb') as f:
             f.write(text)
-        r = subprocess.run([UAM, '-s', stage, '-o', out, src], capture_output=True, text=True)
+        # kameo-nx (2026-11-03): a machine short of commit memory (other builds) refuses the process for a while: wait for it,
+        # not lose a run of thousands of compiles.
+        for attempt in range(60):
+            try:
+                r = subprocess.run([UAM, '-s', stage, '-o', out, src], capture_output=True, text=True)
+                break
+            except OSError:
+                if attempt == 59:
+                    raise
+                time.sleep(20)
         if r.returncode != 0 or not os.path.isfile(out):
             return key, None, (r.stdout + r.stderr).strip()[:300]
         return key, open(out, 'rb').read(), ''
@@ -103,6 +113,24 @@ def read_cache(path):
         entries[key] = data[at + 12:at + 12 + size]
         at += 12 + size
     return entries
+
+
+def write_index(entries, path):
+    """kameo-nx (2026-11-03): deko3d_shaders.idx next to the cache (banjo_renut_deko3d.cpp LoadCacheIndex), in the order the
+    cache was written (sorted keys): the console reads the records' places from it instead of seeking to each one."""
+    at = 24
+    rows = bytearray()
+    last = (0, 0)
+    for key in sorted(entries):
+        size = len(entries[key])
+        rows += struct.pack('<QII', key, at + 12, size)
+        last = (at + 12, key)
+        at += 12 + size
+    head = b'BDKI' + struct.pack('<I', 1) + TAG + struct.pack('<QQQQ', at, len(entries), last[0], last[1])
+    out = os.path.splitext(path)[0] + '.idx'
+    open(out + '.tmp', 'wb').write(head + rows)
+    os.replace(out + '.tmp', out)
+    print(f'deko3d_variant_cache: index of {len(entries)} records, {(len(head) + len(rows)) >> 10} KB -> {out}')
 
 
 # render/pipeline.cpp: ListHeader (magic "RNPL", version 3 or 4, key size, streams), then records (u32 size, the key
@@ -527,6 +555,7 @@ def main():
     open(a.out + '.tmp', 'wb').write(out)
     os.replace(a.out + '.tmp', a.out)
     print(f'deko3d_variant_cache: {len(entries)} variants, {len(out) >> 10} KB -> {a.out} ({failed} failed)')
+    write_index(entries, a.out)
 
 
 if __name__ == '__main__':

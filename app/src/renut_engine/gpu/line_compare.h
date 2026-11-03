@@ -39,6 +39,23 @@ inline bool Line64Differs(const uint8_t *a, const uint8_t *b, bool neon) {
   return Line64DiffersPlain(a, b);
 }
 
+// kameo-nx (2026-11-03, first console profile: Line64Differs in CaptureDelta's loop was 11.6 % of the drawing thread, most of
+// it the horizontal max, the move to a general register and the branch, once a line, while about 2.5 of the 40 lines differ a
+// draw): whether any of 'count' consecutive 64-byte lines differ, with one such check for all of them.
+inline bool LinesAnyDiffer(const uint8_t *a, const uint8_t *b, uint32_t count) {
+#if defined(__aarch64__)
+  uint8x16_t any = vdupq_n_u8(0);
+  for (const uint8_t *const end = a + count * 64; a != end; a += 16, b += 16)
+    any = vorrq_u8(any, veorq_u8(vld1q_u8(a), vld1q_u8(b)));
+  return vmaxvq_u32(vreinterpretq_u32_u8(any)) != 0;
+#else
+  for (uint32_t i = 0; i < count; ++i)
+    if (Line64DiffersPlain(a + i * 64, b + i * 64))
+      return true;
+  return false;
+#endif
+}
+
 // banjo-nx (2026-10-23, render-thread round): which of 'count' (at most 32) 64-byte lines differ, bit i = line i, with
 // no branch per line: four lines' XORs folded by pairwise maxima into one vector of the four lines' maxima, and that
 // into four bits. A branch per line (Line64Differs in a loop) mispredicted on the pushed shared constants, whose
