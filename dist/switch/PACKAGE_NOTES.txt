@@ -8,11 +8,10 @@ This package holds the installer's shaders, with the DLC's: 5,722 made from the 
 kameo.toml is the short one from your table, so only crash logs are written. For a bug report, remove the # in front of log_level. For a profile, copy configs/renut_profile.toml over kameo.toml.
 
 What to check:
-1. The coloured patches on the ground. You haven't told me a result yet.
-2. Frame rate against rc20. No console profile of this build exists, and the profile data came from the emulator.
-3. Dynamic resolution, handheld and docked. It has only run in its test mode on the emulator.
-4. Sky bands in the Badlands, the portraits and far goblins, the DXN swap and the FMV orb, all still waiting on a console result.
-5. DLC content. Two DLC pixel shaders needed an installer fix and have never been seen on screen: ps_31E80B337E6737C3 and ps_D8285199D6D8B325, in a model in pack C9352F19.
+1. Frame rate against rc20. No console profile of this build exists, and the profile data came from the emulator.
+2. Dynamic resolution, handheld and docked. It has only run in its test mode on the emulator.
+3. Sky bands in the Badlands, the portraits and far goblins, the DXN swap and the FMV orb, all still waiting on a console result.
+4. DLC content. Two DLC pixel shaders needed an installer fix and have never been seen on screen: ps_31E80B337E6737C3 and ps_D8285199D6D8B325, in a model in pack C9352F19.
 
 One hang was seen: the first emulator run of this NRO sat on the Badlands loading screen for about 5 minutes. It loaded on your console and in a 10-minute emulator retry. Cause not proven. If it happens on the console, send the log.
 
@@ -45,7 +44,7 @@ What to check:
 2. Dynamic resolution, handheld and docked, in a heavy area such as the Badlands plaza. Does the frame rate hold, and is the softer picture acceptable?
 3. From rc19, below: the coloured patches.
 
-From rc19: a real fix for the coloured patches on the ground. rc18's fix was wrong, as you found.
+From rc19: a real fix for the coloured patches on the ground, which you've now confirmed on the console. rc18's fix was wrong, as you found.
 
 Tested on the emulator only, NOT on your console yet. With your save, the patches appear with the fix off and are gone with it on, in the same views, as Kameo and as the creeper.
 

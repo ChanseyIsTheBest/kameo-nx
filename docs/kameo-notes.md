@@ -504,6 +504,8 @@ Picture-changing keys set off for this port (N&B's choices, pixel-identical by d
 
 ## The coloured patches on the ground (rc19, 2026-11-04)
 
+**Confirmed fixed on the console by the user, 2026-11-04.**
+
 **Seen:** on the console in Badlands (level 004CFC24), flat coloured polygons on the plaza near the torches. Kameo showed green and yellow; the creeper showed yellow, magenta and red in the same places. The ground's detail showed through, and the edges followed the mesh's triangles.
 
 **Cause:** a difference in how the two GPUs multiply. On Xenos anything times 0 is 0, NaN and infinity included. On the Switch's GPU, and in Ryujinx, 0 times NaN is NaN.
