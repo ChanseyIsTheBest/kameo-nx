@@ -578,3 +578,20 @@ Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_
 - **Different DXC:** the page uses DXC v2025.1 and the native chain 1.8.2407, so about a third of the GLSL differs in its temporaries (3,922 of 5,722 identical). All 5,576 compiled variants whose text is the native text are byte for byte the native cache's. A variant with different text is not compared at all, because the cache's key is the text.
 - **Two DLC shaders:** `ps_31E80B337E6737C3` and `ps_D8285199D6D8B325`, in a model in pack C9352F19, stopped SPIRV-Cross at "Maximum compilation loops detected" with the newer DXC's SPIR-V. Any failed shader aborts an install, so every DLC install failed. `lib/chain.js` now retries a rejected shader with `--force-recompile-max-debug-iterations 16` (8 and 64 give the same text). `--force-temporary` also gets through SPIRV-Cross, but `deko3d_glsl.py` refuses its samplers in temporaries. Both shaders now compile to 5,376 bytes, the same size as the native GLSL's, with different bytes and the same counts of texture reads, discards and branches. **Neither has been seen on screen.**
 - **Who compiles:** Banjo's later option. "The Switch, as you play" leaves out `deko3d_shaders.bin` and `pipeline_list.bin`, because with that list and no cache the prebuild workers would compile every shader in it.
+
+## 2 MB blocks: game memory and the NRO's code (version 1.0.1, 2026-11-05, from the Torchlight port's findings)
+
+**Game memory.** `RexGmInit` passed 2 MB as the second argument of `virtmemFindAslr`, which is a guard and not an alignment. So the window was never on a 2 MB boundary, and the kernel used 4 KB pages for all of the game's memory, in every build including 1.0.0. It now asks for 2 MB more and rounds the base up. The view at `0xE0000000` maps 0x1000 further on, so it can never line up and stays on 4 KB pages. `banjo_window_blocks = false` goes back.
+
+**The NRO's code.** `sdk/src/ui/switch_code_blocks.cpp` copies the text and read-only data to heap that lines up with their addresses modulo 2 MB, and swaps the mappings from a page of its own in the first constructor, before any thread of ours exists. Nothing needs putting back at exit, because the game never returns to hbloader. The loader's copy can't be given back, so this costs their size again, about 53 MB. `banjo_code_blocks = false` in `kameo.toml` goes back. The file reads that key itself, because it runs before the cvars.
+
+**A mistake in the first 1.0.1 build:** it used `__start__`, an absolute linker symbol that is never relocated, so the move skipped itself and the latency test read invalid memory, which stopped the emulator run at 91 s. `_start` is right. `app/src/kameo_codes.cpp` still uses `__start__`, but only for the offset in a diagnostic log line. Log lines from the start of `main()` never reach the file, so the status lines are written when the guest window is set up.
+
+**The console (user's run, 2026-11-05):** the move worked: text 46,560 KB and read-only data 7,952 KB, room for 22 and 3 blocks, and no crash in about 150 s. The window is on a 2 MB boundary.
+
+**Not known yet:**
+- **Whether large blocks are really in use.** That run had no `banjo_tlb_test_s`, so there are no latency numbers. Mapping at the right addresses doesn't prove the kernel used blocks.
+- **The gain.** At stock clocks the gameplay windows averaged 22.9 fps with both fixes and 23.2 fps in the earlier run with only game memory fixed. Those weren't controlled: not the same path through the level, and clocks changed during both. There is no 1.0.0 console run to compare with.
+- **The self-test's step 7.** On the emulator the swap's normal path passed on test pages, then a wrong old copy wasn't refused, although Ryujinx's source says it should be. Unexplained. The self-test stops there, so the path that puts the old copy back has not run. It only runs without a loader, not on a console. It should report each step in the next build.
+
+`banjo_tlb_test_s` measures the cost: the same number of cache lines in random order, one to a page and then packed into a few pages. Only the console's numbers mean anything.
