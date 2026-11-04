@@ -68,6 +68,10 @@ REXCVAR_DEFINE_STRING(content_backup_root, "", "Kernel",
  * Off since rc16: it did not stop the bad-disc message, and the close it was for no longer happens at
  * boot (kameo_dlc_no_rescan, renut_engine/dlc_install.cpp).
  */
+namespace rex::input {
+void InputScriptSavesListed();  // input/input_system.cpp
+}
+
 REXCVAR_DEFINE_BOOL(content_keep_closed_dlc, false, "Kernel",
                     "A closed DLC pack keeps its root and its open files until the game has moved on");
 // katamari-nx (2026-11-01): DLC kept from the game without uninstalling it (the user: Beautiful Katamari's packs that
@@ -388,6 +392,8 @@ std::vector<XCONTENT_AGGREGATE_DATA> ContentManager::ListContent(uint32_t device
   // is its contents.
   REXSYS_INFO("[save] list type {:08X} in {}: {} entry(ies)", uint32_t(content_type),
               rex::path_to_utf8(package_root), result.size());
+  if (content_type == XContentType::kSavedGame)
+    rex::input::InputScriptSavesListed();  // kameo-nx (2026-11-04): input_script's '|'
   for (const auto& entry : result) {
     REXSYS_INFO("[save]   '{}' (displayed as '{}')", entry.file_name(),
                 rex::string::to_utf8(entry.display_name()));

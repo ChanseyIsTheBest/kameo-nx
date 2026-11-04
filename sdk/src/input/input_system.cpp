@@ -11,6 +11,7 @@
 
 #include <rex/frame_latency.h>  // banjo-nx (2026-10-19)
 #include <chrono>
+#include <atomic>
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -48,7 +49,9 @@ REXCVAR_DEFINE_STRING(input_script, "", "Input",
                       "poll (buttons A B X Y START BACK UP DOWN LEFT RIGHT LB RB), each held 0.2 s, or as long as "
                       "'@seconds' after the name says; the sticks pushed all the way with LSUP LSDOWN LSLEFT LSRIGHT "
                       "and RSUP RSDOWN RSLEFT RSRIGHT (e.g. '30:LSUP@2.5'). While set, user 0 always has a pad "
-                      "connected (works minimized, with no controller)")
+                      "connected (works minimized, with no controller). After a '|' the times count from the first "
+                      "time the game lists its saves, and the presses before the '|' stop then, so a title screen "
+                      "that takes longer on one boot can't shift the menu presses")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-02): emu2 lost its START in a 46 s host stall, so every later press landed one screen off.
 REXCVAR_DEFINE_INT32(input_script_polls, 0, "Input",
@@ -255,16 +258,23 @@ struct ScriptedPress {
   // katamari-nx (2026-11-01): a stick pushed all the way (axis 0-3: left x, left y, right x, right y).
   int axis = -1;
   int16_t value = 0;
+  bool after_saves = false;  // kameo-nx (2026-11-04): after the '|'
 };
+// kameo-nx (2026-11-04): the game has listed its saves (ContentManager::ListContent, another thread), and the script's
+// clock when the poll thread first saw it.
+std::atomic<bool> g_script_saves_seen{false};
+double g_script_saves_at = -1.0;
 const std::vector<ScriptedPress>& InputScript() {
   static const std::vector<ScriptedPress> presses = [] {
     std::vector<ScriptedPress> out;
     const std::string text = REXCVAR_GET(input_script);
+    const size_t gate = text.find('|');
     size_t at = 0;
     while (at < text.size()) {
-      size_t end = text.find(',', at);
+      size_t end = text.find_first_of(",|", at);
       if (end == std::string::npos) end = text.size();
       const std::string item = text.substr(at, end - at);
+      const bool after_saves = gate != std::string::npos && at > gate;
       at = end + 1;
       const size_t colon = item.find(':');
       if (colon == std::string::npos) continue;
@@ -280,7 +290,7 @@ const std::vector<ScriptedPress>& InputScript() {
           {"BACK", 0x0020},  {"LB", 0x0100},   {"RB", 0x0200},   {"A", 0x1000},     {"B", 0x2000},
           {"X", 0x4000},     {"Y", 0x8000}};
       for (const auto& [button, bits] : kButtons)
-        if (name == button) out.push_back({seconds, bits, hold});
+        if (name == button) out.push_back({seconds, bits, hold, -1, 0, after_saves});
       static const struct {
         const char* name;
         int axis;
@@ -288,7 +298,7 @@ const std::vector<ScriptedPress>& InputScript() {
       } kSticks[] = {{"LSLEFT", 0, -32767}, {"LSRIGHT", 0, 32767}, {"LSDOWN", 1, -32767}, {"LSUP", 1, 32767},
                      {"RSLEFT", 2, -32767}, {"RSRIGHT", 2, 32767}, {"RSDOWN", 3, -32767}, {"RSUP", 3, 32767}};
       for (const auto& stick : kSticks)
-        if (name == stick.name) out.push_back({seconds, 0, hold, stick.axis, stick.value});
+        if (name == stick.name) out.push_back({seconds, 0, hold, stick.axis, stick.value, after_saves});
     }
     if (!out.empty()) REXLOG_INFO("input_script: {} presses scripted", out.size());
     return out;
@@ -333,12 +343,26 @@ void ScriptedSticks(X_INPUT_GAMEPAD& pad) {
   pad.thumb_rx = axes[2];
   pad.thumb_ry = axes[3];
 }
+// kameo-nx (2026-11-04): whether a press is held now, by its part of the script.
+bool ScriptPressHeld(const ScriptedPress& press, double now) {
+  if (g_script_saves_at < 0.0 && g_script_saves_seen.load(std::memory_order_relaxed)) {
+    g_script_saves_at = now;
+    REXLOG_INFO("input_script: the game listed its saves at {:.1f} s", now);
+  }
+  if (press.after_saves) {
+    if (g_script_saves_at < 0.0) return false;
+    const double at = g_script_saves_at + press.at;
+    return now >= at && now < at + press.hold;
+  }
+  if (g_script_saves_at >= 0.0 && press.at >= g_script_saves_at) return false;
+  return now >= press.at && now < press.at + press.hold;
+}
 // Buttons the script holds now for user 0 (the clock starts at the first poll).
 uint16_t ScriptedButtons() {
   const double now = ScriptSeconds();
   uint16_t buttons = 0;
   for (const ScriptedPress& press : InputScript()) {
-    if (press.axis < 0 && now >= press.at && now < press.at + press.hold) {
+    if (press.axis < 0 && ScriptPressHeld(press, now)) {
       buttons |= press.buttons;
       static double logged = -1.0;
       if (logged != press.at) {
@@ -354,7 +378,7 @@ bool ScriptedStickPushes(X_INPUT_GAMEPAD& pad) {
   const double now = ScriptSeconds();
   bool any = false;
   for (const ScriptedPress& press : InputScript()) {
-    if (press.axis < 0 || now < press.at || now >= press.at + press.hold) continue;
+    if (press.axis < 0 || !ScriptPressHeld(press, now)) continue;
     switch (press.axis) {
       case 0: pad.thumb_lx = press.value; break;
       case 1: pad.thumb_ly = press.value; break;
@@ -366,6 +390,7 @@ bool ScriptedStickPushes(X_INPUT_GAMEPAD& pad) {
   return any;
 }
 }  // namespace
+void InputScriptSavesListed() { g_script_saves_seen.store(true, std::memory_order_relaxed); }
 
 X_RESULT InputSystem::GetCapabilities(uint32_t user_index, uint32_t flags,
                                       X_INPUT_CAPABILITIES* out_caps) {
