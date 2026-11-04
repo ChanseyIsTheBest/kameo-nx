@@ -381,6 +381,23 @@ Reported by the Beautiful Katamari session, then checked here. Kameo's point spr
 - Not measured: the cost. Sprites now cover their real size, so a scene full of motes draws more pixels than it did.
 - The PC build was not rebuilt, so the D3D12 failure is fixed by the source but not re-run. The PC's shader cache and `shader_cache_switch.cpp` were left as they were: the console reads the GLSL package.
 
+## 3 fps in an area of the big level: the vertex cache's limit (rc16 console run, 2026-11-04)
+
+`renut_001 (27).log`, `rex_profile (40).log`. CPU 2397 MHz, GPU 1305 MHz, so the overclock was already at its top:
+
+| Window | fps | Render thread ms a frame | GPU ms a frame | Draws a frame | MB a frame through the upload ring | Stream cache |
+|---|---|---|---|---|---|---|
+| 12:48:39, battle | 47.9 | 16.6 | 14.1 | 3,687 | 1 | 107 MB |
+| 12:49:29, quiet | 60.0 | 1.9 | 2.6 | 460 | 0 | 1 MB |
+| 12:48:19, loading | 1.0 | 1005 | 1.4 | 4,787 | about 1,800 | 256 MB (full) |
+| 12:50:10, the slow area | 3.1 | 328 | 3.9 | 3,048 | 568 | 256 MB (full) |
+
+The render thread is at 103 %, in `ConvertVertices` under `FlushVertexFillsLocked`. The GPU is nearly idle. `banjo_renut_stream_cache_mb` is 256 in the package, and at that limit a draw can't keep a converted copy, so it converts its vertices again at every kick: 23,000-25,000 draws in 10 s for streams and about 20,000 for indices, against 0 in the battle. The cache fills in the first seconds of the area, and one 60-frame pass refused 153,100 copies. At 3 fps, that pass runs only once every 20 s. The heap had 913 MB never handed out.
+
+**This probably also explains the level-load crash:** the same level's load in this run (12:48:19) shows `stream cache full 17102` with 18 GB through the ring in 10 s. That points to vertex data refused at this limit rather than bone constants. rc12's crash log has no 10 s report from the load itself, so it can't confirm this. The limit isn't the only heavy source, though: rc11's battle on this level put 2-3 GB through the ring per 10 s with the cache at 45-137 MB and no refusals, so `kind` draws (fans, quads, inline vertices, skinned once) cost a lot on their own.
+
+**To test:** `banjo_renut_stream_cache_mb = 768` (`configs/renut_cache768.toml`), which needs no new build. How much the scene needs isn't known: with 256 MB kept and up to 600 MB converted per frame, it could be up to about 860 MB, less whatever overlaps. Whole-buffer copies should be more compact than ranges, and ranges kept by earlier draws may crowd them out, because `kStableFlushes` (3) is reached within a single frame once frames are split.
+
 ## Crash at the Microsoft logo (rc13, 2026-11-04)
 
 The console's `rex_crash (17).log`: a read at guest address -8 in `n_82557A68`, the game's heap allocator, on the main thread during a file callback. It was walking a free list (head 0x40100180) and a block's next pointer was 0. So the heap was damaged earlier, and the log doesn't say by what. First time in the crash logs we have, and it has not been reproduced. The log has no `long frame split` line, so rc13's split did not run on that boot.
