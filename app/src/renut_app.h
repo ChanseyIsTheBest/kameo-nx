@@ -218,6 +218,7 @@ public:
         // starts (reNut upstream's installer, renut_engine/dlc_install.cpp, as banjo-nx does).
         renut::dlc::InstallPackages(runtime());
         renut::dlc::SeedSignInState(runtime());
+        banjo::title_update::ApplyLanguage();  // kameo-nx (2026-11-04): the language key
         // One log line with every enhancement and whether it is active (src/cpu/banjo_enhancements.h).
         banjo::LogEnhancements();
         // PC: function-level CPU profile (banjo_pc_profile_s = N seconds per report; 0 = off; from futari-nx).

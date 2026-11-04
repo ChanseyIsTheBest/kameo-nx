@@ -1,154 +1,115 @@
 #!/usr/bin/env python3
-"""kameo-nx (2026-11-02): writes the package's tomls from katamari-nx's shipped renut.toml (itself from banjo-nx's), with
-Kameo's settings:
+"""kameo-nx (2026-11-04, the user's request: only the player's options in the toml, everything else hardcoded): writes the
+package's tomls from app/kameo_switch.toml, the player's file. The built-in settings are app/kameo_switch_defaults.toml.
 
-  renut.toml       the shipped settings: Renut on deko3d, 720 lines handheld and 1080 docked (as katamari-nx ships; no
-                   dynamic resolution), every exact enhancement as the base ships it, the items measured SLOWER ON THE
-                   CONSOLE off, diagnostics as the base's renut.toml (logs on);
-  renut_play.toml  renut.toml with the render-thread diagnostics off;
-  renut_ab.toml    renut.toml with an in-run A/B list, 30 s halves, target 1 (a Vulkan-only key: does nothing on the
-                   Switch) as the control.
-  configs/*.toml   test configs and the picture-changing options, each one key away from renut.toml, for the user.
+  renut.toml       the player's file as it is: what the package ships as kameo.toml;
+  renut_play.toml  the same with the log on, for a bug report;
+  renut_ab.toml    logs and diagnostics, a fixed resolution, an in-run A/B list with 30 s halves, target 1 (a Vulkan-only
+                   key: does nothing on the Switch) as the control;
+  configs/*.toml   test configs and options, each as few keys as it can be away from the player's file.
 
-  python tools/make_kameo_tomls.py --base <katamari-nx renut.toml> --out dist/switch/kameo-nx
+Configs that measure keep the conditions of the runs before them: dynamic resolution off, no frame cap, docked at 1080.
+
+  python tools/make_kameo_tomls.py
 """
-import argparse
 import os
 import re
 
-HEADER = """# kameo-nx (Kameo: Elements of Power on the Switch, Renut's renderer on deko3d): {what}
-# Made by tools/make_kameo_tomls.py from katamari-nx's shipped renut.toml. Copy over sdmc:/switch/kameo-nx/kameo.toml, the file the NRO reads.
-# Credits: reNut's renderer (masterspike52, reuse permitted), Kameo: RePowered (MaxDeadBear, BiRabittoh; MIT), katamari-nx,
-# banjo-nx, sa2-nx, NetherSX2_nx (four-core layout), battd_nx (the GPU arena), bejeweled3-nx and the zuma ports.
-"""
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT = os.path.join(ROOT, 'dist', 'switch', 'kameo-nx')
 
-# Keys set for Kameo (the rest as katamari-nx ships them).
-SHIPPED = {
-    'banjo_renderer': '"renut"',
-    'renut_gpu_backend': '"deko3d"',
-    'banjo_renut_render_height_handheld': '720',
-    'banjo_renut_render_height_docked': '1080',
-    'banjo_renut_dynamic_resolution': 'false',
-    'disable_msaa': 'false',
-    'renut_shadow_resolution': '"1x"',
-    'renut_ambient_occlusion': '"Half"',
-    'renut_post_process_precision': '"Game"',
-    # The game paces itself (its presentation interval); no extra cap.
-    'frame_cap': '"Off"',
-    'target_refreshRate': '-1',
-    'masseffect_renderer_native': 'false',
-    'gpu_plugin': '""',
-    # The user's request (2026-11-03): the fourth core on by default, with only the Audio Worker (the heavier audio thread in
-    # both console runs) and the shader compiler on it. This id is what Sphaira gives a forwarder of
-    # sdmc:/switch/kameo-nx/kameo-nx.nro; a launch without a forwarder stays on three cores.
-    'banjo_forwarder_program_id': '"05E750DF55751000"',
-    'banjo_system_core_xma': 'false',
-    'banjo_system_core_audio_output': 'false',
-    # The GPU round (2026-11-03): only the four shaders tools/gpr32_shaders.txt adds for Kameo have the constant. Exact.
-    'banjo_deko3d_gpr32': 'true',
-    # Off on Katamari's console measurement (exact either way: the same samples).
-    'banjo_xma_frame_cache': 'false',
+LOG = {'log_level': '"info"'}
+# What the shipped toml had on up to rc19: the log, the render thread's reports and the sampling profile's stacks.
+DIAG = {
+    **LOG,
+    'banjo_renut_diag_resolve_trace': 'true',
+    'banjo_renut_diag_gpu_shaders': 'true',
+    'banjo_renut_diag_terrain': 'true',
     'banjo_shader_misses': '"sdmc:/switch/kameo-nx/shader_misses"',
-    # Pixel-identical by default (the request): N&B's choices that change the picture stay off. Each is a config below.
-    'banjo_renut_smaa': 'false',
-    'banjo_renut_fur_shells_percent': '100',
-    'banjo_renut_portrait_fur_shells_percent': '100',
-    'banjo_renut_portrait_msaa_samples': '0',
-    # The display's gamma ramp the game loads: without it the picture is darker than the reference (docs/kameo-notes.md).
-    'banjo_renut_game_gamma': 'true',
-    # Kameo's level geometry: the PC's cache reached 234.5 MB in Thorn's Castle; at the base's 128 MB, emu4prof counted
-    # "index cache full 14367" and the draws fell back to range copies converted every frame (under 2 fps). Exact either way.
-    'banjo_renut_stream_cache_mb': '256',
-    # Off in banjo-nx because N&B draws on two devices; Kameo has one (queued.cpp's key).
-    'banjo_renut_deferred_chain': 'true',
+    'banjo_stall_watch_seconds': '1',
+    'renut_gpu_profile': '10.0',
+    'switch_profile_stacks': 'true',
 }
-PLAY = {'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders': 'false',
-        'banjo_renut_diag_terrain': 'false'}
-# The targets that act on Kameo's draws (all immediate, no command-buffer recordings: docs/kameo-notes.md's census): the
-# fast draw (25), pipelines by content (28), whole-buffer copies (22), merged draws (33), mesh objects (42), the localized
-# copies of the hot functions (70), Begin*Vertices draws in the delta chain (71: on here, off in banjo-nx), 2D textures read
-# through tfetch3D (72; its off half changes the picture); 1 (a Vulkan-only key) is the do-nothing control on the Switch. The
-# record-time items (45-50) have nothing to act on here, and target 26 (the setters' touch compare) neither: the game's own
-# setters stay.
-# 9 targets x 60 s = 9 minutes a round: 27+ minutes.
-AB = {'banjo_renut_ab_targets': '"72,71,25,28,22,33,42,70,1"', 'banjo_renut_ab_s': '30',
-      'banjo_renut_dynamic_resolution': 'false'}
-VERIFY = {k: 'true' for k in (
-    'banjo_renut_fast_draw_verify', 'banjo_renut_resource_objects_verify', 'banjo_renut_fetch_cache_verify',
-    'banjo_renut_whole_buffers_verify', 'banjo_renut_persistent_shared_verify', 'banjo_renut_chain_reuse_verify',
-    'banjo_renut_snapshot_deltas_verify', 'banjo_renut_store_cards_verify', 'banjo_renut_record_extents_verify')}
-# The CPU natives' guard (banjo_hot_guest.cpp): each thread's first 4000 calls of every native compared with the
-# generated original, then one in 64 ("[hot] DIFFERENCE" lines; the 10-s "[hot]" report counts the checks).
-VERIFY.update({'banjo_hot_guard_calls': '4000', 'banjo_hot_guard_period': '64'})
-# The PGO build's renut.toml: no log, no profilers, no diagnostics; rex_crash.log and rex_stderr.log stay.
-PGO = {'log_level': '"off"', 'switch_profile_stacks': 'false', 'banjo_cpu_profiler': 'false',
-       'banjo_show_profiler': 'false', 'banjo_show_fps': 'false', 'banjo_stall_watch_seconds': '0',
-       'renut_gpu_profile': '0.0', 'banjo_renut_diag_resolve_trace': 'false', 'banjo_renut_diag_gpu_shaders': 'false',
-       'banjo_renut_diag_terrain': 'false', 'banjo_hot_guard_calls': '0', 'banjo_hot_guard_period': '0'}
-# A console profile: the sampling profiler's stacks on (optimising-functions.md); samples go to rex_profile.log.
-PROFILE = {'switch_profile_stacks': 'true', 'banjo_cpu_profiler': 'true'}
+FIXED = {
+    'banjo_renut_dynamic_resolution': 'false',
+    'frame_cap': '"Off"',
+    'banjo_renut_render_height_docked': '1080',
+}
+GPU_ROUND_OFF = {k: 'false' for k in (
+    'banjo_deko3d_color_handover', 'banjo_deko3d_scanout_handover', 'banjo_deko3d_depth_handover_sampled',
+    'banjo_deko3d_depth_read_layout', 'banjo_renut_gamma_upload_once', 'banjo_renut_present_no_pow',
+    'banjo_renut_present_texel_load', 'banjo_deko3d_gpr32', 'banjo_deko3d_resolve_keeps_target')}
+AUDIT_OFF = {
+    **{k: 'false' for k in (
+        'banjo_renut_last_pixel_shader', 'banjo_renut_poly_offset', 'banjo_renut_cull_both', 'banjo_renut_real_occlusion',
+        'banjo_renut_resolve_clears_both', 'banjo_renut_dxn_swap', 'banjo_renut_fmv_orb_skip', 'banjo_renut_const_nan_flush')},
+    'banjo_renut_whole_over_cap_mb': '0',
+}
+VERIFY = {
+    'banjo_hot_guard_calls': '4000',
+    'banjo_hot_guard_period': '64',
+    **{k: 'true' for k in (
+        'banjo_renut_fast_draw_verify', 'banjo_renut_resource_objects_verify', 'banjo_renut_fetch_cache_verify',
+        'banjo_renut_whole_buffers_verify', 'banjo_renut_persistent_shared_verify', 'banjo_renut_chain_reuse_verify',
+        'banjo_renut_snapshot_deltas_verify', 'banjo_renut_store_cards_verify', 'banjo_renut_record_extents_verify')},
+}
+
+# file: (what it is, the keys it changes)
 CONFIGS = {
-    'renut_verify.toml': (VERIFY, 'every Renut verify mode on (emulator / test runs: slow; the log\'s verify lines '
-                                  'must count 0 differences)'),
-    'renut_pgo.toml': (PGO, 'the shipped settings with only the crash logs (the PGO build\'s renut.toml)'),
-    'renut_profile.toml': (PROFILE, 'the shipped settings with the console profile on (rex_profile.log)'),
-    'renut_smaa.toml': ({'banjo_renut_smaa': 'true'}, 'SMAA on the final composite (not pixel-identical; it needs the '
-                                                      'composite\'s pixel shader hash, banjo_renut_smaa_shaders)'),
-    'renut_720_docked.toml': ({'banjo_renut_render_height_docked': '720'},
-                              '720 lines docked too, the Xbox 360\'s own (pixel-identical)'),
-    'renut_648_864.toml': ({'banjo_renut_render_height_handheld': '648', 'banjo_renut_render_height_docked': '864'},
-                           'banjo-nx\'s internal resolution: 648 lines handheld, 864 docked (not pixel-identical)'),
-    'renut_dynamic.toml': ({'banjo_renut_dynamic_resolution': 'true'},
-                           'banjo-nx\'s dynamic resolution, 540-720 handheld / 720-1080 docked (not pixel-identical)'),
+    'renut.toml': (None, {}),
+    'renut_play.toml': ('the same with the log on, for a bug report', LOG),
+    'renut_ab.toml': ('in-run A/B, 30 s halves, target 1 is the do-nothing control',
+                      {**DIAG, **FIXED, 'banjo_renut_ab_targets': '"72,71,25,28,22,33,42,70,1"', 'banjo_renut_ab_s': '30'}),
+    'configs/renut_profile.toml': ('the console profile: the log, diagnostics and the CPU profiler',
+                                   {**DIAG, **FIXED, 'banjo_cpu_profiler': 'true'}),
+    'configs/renut_verify.toml': ('the checks: slow, a test', {**DIAG, **FIXED, **VERIFY}),
+    'configs/renut_pgo.toml': ('for a PGO instrumented build', FIXED),
+    'configs/renut_no_dynamic.toml': ('a fixed 3D height', {**LOG, 'banjo_renut_dynamic_resolution': 'false'}),
+    'configs/renut_648_864.toml': ('fixed 3D heights of 648 and 864',
+                                   {**DIAG, **FIXED, 'banjo_renut_render_height_handheld': '648',
+                                    'banjo_renut_render_height_docked': '864'}),
+    'configs/renut_720_docked.toml': ('docked at a fixed 720',
+                                      {**DIAG, **FIXED, 'banjo_renut_render_height_docked': '720'}),
+    'configs/renut_smaa.toml': ('SMAA on: changes the picture', {**LOG, 'banjo_renut_smaa': 'true'}),
+    'configs/renut_nan_flush_off.toml': ('without the fix for the coloured ground patches',
+                                         {**LOG, 'banjo_renut_const_nan_flush': 'false'}),
+    'configs/renut_no_gpu_round.toml': ('without the GPU round of 2026-11-03', {**LOG, **GPU_ROUND_OFF}),
+    'configs/renut_audit_off.toml': ('without the renderer fixes matched to RePowered', {**LOG, **AUDIT_OFF}),
 }
 
-# What belongs to the base's game: stale addresses (banjo_cpu_native_sub_*, this port's come from its own lists) and
-# Katamari's own keys.
-DROP = re.compile(r'^\s*(banjo_cpu_native_sub_|banjo_cpu_native_xaudio_src|katamari_)[^\n]*\n', re.M)
 
-
-def apply(text, keys):
-    """Sets each key: in place where the base has it at the top level, else before the first [section] (banjo-nx's
-    [input_p1] / [input_p2] stay last: a key after a table header belongs to that table)."""
-    first_section = re.search(r'^\[', text, re.M)
-    top_end = first_section.start() if first_section else len(text)
-    for k, v in keys.items():
-        pat = re.compile(r'^(\s*)' + re.escape(k) + r'\s*=.*$', re.M)
-        m = pat.search(text, 0, top_end)
-        if m:
-            text = text[:m.start()] + f'{m.group(1)}{k} = {v}' + text[m.end():]
+def make(base, what, keys):
+    text = base
+    if what:
+        text = f'# kameo-nx test config: {what}. Copy over kameo.toml.\n' + text
+    extra = []
+    for key, value in keys.items():
+        pattern = re.compile(rf'^(# )?{re.escape(key)} = .*$', re.M)
+        if pattern.search(text):
+            text = pattern.sub(f'{key} = {value}', text, count=1)
         else:
-            text = text[:top_end].rstrip('\n') + f'\n{k} = {v}\n\n' + text[top_end:]
-        first_section = re.search(r'^\[', text, re.M)
-        top_end = first_section.start() if first_section else len(text)
+            extra.append(f'{key} = {value}')
+    if extra:
+        # Before the first section: a key after it would belong to it.
+        marker = '# Button maps:'
+        assert marker in text
+        text = text.replace(marker, '# Test settings\n' + '\n'.join(extra) + '\n\n' + marker, 1)
     return text
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--base', required=True)
-    ap.add_argument('--out', required=True)
-    a = ap.parse_args()
-    base = open(a.base, encoding='utf-8').read()
-    base = base[base.index('# banjo-nx test config'):].replace('sdmc:/switch/katamari-nx/', 'sdmc:/switch/kameo-nx/')
-    base = base.replace('sdmc:/switch/banjo-nx/', 'sdmc:/switch/kameo-nx/')
-    base = DROP.sub('', base)
-    # banjo-nx's note on its own title update.
-    base = re.sub(r'^# Title update 3 \(2026-10-29\).*?^# renut_guard\.toml[^\n]*\n', '', base, flags=re.M | re.S)
-    shipped = apply(base, SHIPPED)
-    os.makedirs(os.path.join(a.out, 'configs'), exist_ok=True)
-    outs = {
-        'renut.toml': (shipped, 'the shipped settings (720 lines handheld, 1080 docked; diagnostics and logs on)'),
-        'renut_play.toml': (apply(shipped, PLAY), 'renut.toml with the render-thread diagnostics off, for playing'),
-        'renut_ab.toml': (apply(shipped, AB), 'renut.toml with an in-run A/B list, 30 s halves, target 1 as the '
-                                              'control (a Vulkan-only key: nothing on the Switch)'),
-    }
-    for name, (cfg, what) in CONFIGS.items():
-        outs[os.path.join('configs', name)] = (apply(shipped, cfg), what)
-    for name, (text, what) in outs.items():
-        with open(os.path.join(a.out, name), 'w', encoding='utf-8', newline='\n') as f:
-            f.write(HEADER.format(what=what) + text)
-        print(name)
+    with open(os.path.join(ROOT, 'app', 'kameo_switch.toml'), encoding='utf-8', newline='') as f:
+        base = f.read().replace('\r\n', '\n')
+    os.makedirs(os.path.join(OUT, 'configs'), exist_ok=True)
+    keep = {os.path.basename(name) for name in CONFIGS if name.startswith('configs/')}
+    for name in os.listdir(os.path.join(OUT, 'configs')):
+        if name.endswith('.toml') and name not in keep:
+            os.remove(os.path.join(OUT, 'configs', name))
+            print('removed configs/' + name)
+    for name, (what, keys) in CONFIGS.items():
+        with open(os.path.join(OUT, name), 'w', encoding='utf-8', newline='\n') as f:
+            f.write(make(base, what, keys))
+    print(len(CONFIGS), 'tomls written to', OUT)
 
 
 if __name__ == '__main__':

@@ -3,7 +3,30 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: a real fix for the coloured patches on the ground. rc18's fix was wrong, as you found. Nothing else that affects the picture has changed since rc18.
+New in this package: the short kameo.toml, the language setting, a working SMAA switch, and the NRO's icon, version and author. Your console's shader cache and pipeline list are included. Tested on the emulator only.
+
+kameo.toml now holds only your options. Everything else is built into the NRO. Copy this kameo.toml over your old one, or the old 600-line file keeps overriding the built-in settings.
+
+What changes how the game runs, because your table asked for it:
+- Dynamic resolution is on: 540-720 handheld, 720-1080 docked. It has never run on your console. On the emulator its test mode stepped through the heights and the picture was fine, but the emulator can't show when the console's GPU would trigger a drop.
+- frame_cap is 60, not Off.
+- The docked height with dynamic resolution off is 900, not 1080.
+- Only crash logs are written. For a bug report, remove the # in front of log_level, or use configs/renut_play.toml. For a profile, use configs/renut_profile.toml, which keeps the old fixed resolution and no cap so results compare with earlier runs.
+
+Language: "system" follows the Switch. French was tested on the emulator: menus, level names and button prompts are all French.
+
+SMAA is still off by default. As shipped before, it did nothing in Kameo, because it waited for a shader only Banjo has. It now runs after Kameo's composite shader, on every gameplay frame in the emulator test, and edges look smoother. Other composites, such as water or depth of field, might use another shader, and SMAA would skip those frames.
+
+MSAA: msaa_level only lowers MSAA the game already uses, and the 3D scene has none, so it won't smooth the 3D image. It only affects one small target.
+
+Your forwarder id: 05D6EA1333487000 is Banjo's. This port's is 05E750DF55751000. A Sphaira forwarder is recognised either way.
+
+What to check:
+1. The NRO's icon, version 1.0.0 and author in the homebrew menu.
+2. Dynamic resolution, handheld and docked, in a heavy area such as the Badlands plaza. Does the frame rate hold, and is the softer picture acceptable?
+3. From rc19, below: the coloured patches.
+
+From rc19: a real fix for the coloured patches on the ground. rc18's fix was wrong, as you found.
 
 Tested on the emulator only, NOT on your console yet. With your save, the patches appear with the fix off and are gone with it on, in the same views, as Kameo and as the creeper.
 

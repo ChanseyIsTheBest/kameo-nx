@@ -538,3 +538,21 @@ The counter is a rough filter (`patch_strict.py`, scratch, not in the repo) and 
 **Wrong theories I stated to the user on the way:** the shadow pass (rc18), and baked ground tiles.
 
 **Seen and not explained:** after a while in the level the emulator's light goes from day through amber to dark blue and back. The game's own constants do this (c11, c14 and c20 move smoothly in the log), so the colour change looks like the game's logic. The sky also shows hard colour bands during it, and I do not know whether the console shows those. It is the same with the fix on and off.
+
+## The player's toml and the built-in settings (rc20, 2026-11-04, the user's table)
+
+`kameo.toml` holds only the user's list (`app/kameo_switch.toml`), and `dist/switch/kameo-nx/renut.toml` is that same file; `tools/make_kameo_tomls.py` writes it and the test configs. Everything else is in `app/kameo_switch_defaults.toml`, compiled in. Before this the packages shipped a 600-line toml that overrode the built-ins, so the console's runs had diagnostics on. A comparison of all 244 keys found only three missing from the built-in file, and only nine different, all diagnostics or logging. Those nine now take the built-in values, with the log writer on so uncommenting `log_level` works without a slow synchronous file. With the level off no log file is opened at all (`logging.cpp`).
+
+The values the user chose that change behaviour: dynamic resolution on, `frame_cap` 60, docked 900 when dynamic is off, and the forwarder id (Banjo's value; Sphaira forwarders are recognised without it, `SphairaForwarderOfThisNro`).
+
+**`language`:** new here, banjo-nx's design. Title update 2 has English, French, German, Italian, Japanese, Korean, Mexican, Spanish and tchinese folders. The game itself turns language 5 with game region 0xFF (`XGetGameRegion`, the USA disc) into its `mexican` folder (`sub_820B5...`, `li r30,10`), and loads English when a language's file is missing (`sub_820C13A8`). Simplified Chinese, Portuguese, Dutch, Russian and Polish fall back to English. Forcing French on the emulator gave French menus, level names and prompts.
+
+**`msaa_level`:** only lowers what the game asks for (`surfaces.cpp`). The log shows the 3D scene's depth target at 1 sample and only a 1280x256 target at 4; `msaa_level = 0` made that target 1 sample. Real scene MSAA, as RePowered has, would be a new feature.
+
+**`banjo_renut_smaa`:** its trigger, `banjo_renut_smaa_after_ps`, was N&B's shader 981A6A58F2ABFA42, which Kameo does not have, so SMAA never ran. Kameo's built-in value is 8587CAFE5BE7474F, the full-screen composite before the HUD in the plaza's draw log. On the emulator SMAA then ran on every gameplay frame logged, and hard-edge pixels fell from 0.90 % to 0.59 % (different views, so a rough figure). Other composites from RePowered's list (focus, water, saturation and so on) were not reached and may use other shaders.
+
+**Dynamic resolution:** `banjo_renut_dynamic_test_s = 12` walked 33 steps between 720 and 540 lines with a normal picture. The floor of `banjo_renut_dynamic_gpu_ms` is 10 ms and the emulator's GPU time is about 0, so the real trigger can only be tested on the console.
+
+**Console memory (the user's logs to 13:57):** at most 1,348 MB taken from a 3,094 MB heap plus a 634 MB GPU region, leaving 1,112 MB never handed out. The older 3 fps run left 913 MB.
+
+**The NRO:** version 1.0.0, author ChanseyIsTheBest, the user's icon (`tools/switch/icon/kameo_icon.jpg`, 256x256, from their `icon.webp`), tracked as the other ports track theirs, at the user's word.

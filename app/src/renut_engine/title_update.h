@@ -15,5 +15,7 @@ namespace banjo::title_update {
 // RenutApp::OnConfigurePaths: the update folder when update_data_root is not set, and the check that default.xexp is
 // there (the code is the update's: without the patch the game would run the base XEX's data through it).
 void ConfigurePaths(rex::PathConfig &paths);
+// kameo-nx (2026-11-04): the language key: the console language the game is told. Before the game starts.
+void ApplyLanguage();
 
 }  // namespace banjo::title_update
