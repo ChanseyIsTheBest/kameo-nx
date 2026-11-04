@@ -5,7 +5,7 @@ the ReXGlue static recompiler. The PC build is its intermediary step. You need y
 is in this repository.
 
 > [!NOTE]
-> You need your own copy of the Xbox 360 disc (NTSC-U) and title update 2. The DLC packs are optional.
+> You need your own copy of the Xbox 360 disc (NTSC-U or PAL) and title update 2 for that disc. The DLC packs are optional.
 
 ## How to install
 

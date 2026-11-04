@@ -14,7 +14,8 @@ SD card layout
 --------------
 sdmc:/switch/kameo-nx/kameo-nx.nro      the program
 sdmc:/switch/kameo-nx/kameo.toml        settings, the only toml the NRO reads (copy one of the tomls below over it)
-sdmc:/switch/kameo-nx/game_root/        the disc's files, and title update 2's default.xexp next to default.xex
+sdmc:/switch/kameo-nx/game_root/        the disc's files (NTSC-U or PAL), and that disc's title update 2 default.xexp next to
+                                        default.xex
                                         (extract your ISO; the ISO itself is not read)
 sdmc:/switch/kameo-nx/update/           title update 2's language folders (English, French ...)
 sdmc:/switch/kameo-nx/dlc/              the DLC packages (Xbox 360 LIVE files, content type 2), optional, installed at

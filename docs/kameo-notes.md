@@ -578,3 +578,41 @@ Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_
 - **Different DXC:** the page uses DXC v2025.1 and the native chain 1.8.2407, so about a third of the GLSL differs in its temporaries (3,922 of 5,722 identical). All 5,576 compiled variants whose text is the native text are byte for byte the native cache's. A variant with different text is not compared at all, because the cache's key is the text.
 - **Two DLC shaders:** `ps_31E80B337E6737C3` and `ps_D8285199D6D8B325`, in a model in pack C9352F19, stopped SPIRV-Cross at "Maximum compilation loops detected" with the newer DXC's SPIR-V. Any failed shader aborts an install, so every DLC install failed. `lib/chain.js` now retries a rejected shader with `--force-recompile-max-debug-iterations 16` (8 and 64 give the same text). `--force-temporary` also gets through SPIRV-Cross, but `deko3d_glsl.py` refuses its samplers in temporaries. Both shaders now compile to 5,376 bytes, the same size as the native GLSL's, with different bytes and the same counts of texture reads, discards and branches. **Neither has been seen on screen.**
 - **Who compiles:** Banjo's later option. "The Switch, as you play" leaves out `deko3d_shaders.bin` and `pipeline_list.bin`, because with that list and no cache the prebuild workers would compile every shader in it.
+
+## The PAL disc (2026-11-04)
+
+The European disc (`Kameo - Elements of Power (Europe) (En,Ja,Fr,De,Es,It,Zh,Ko) (Rev 1)`, media ID **45BB5521**): `default.xex`
+version 0.0.0.5, SHA-256 `124d812f75f465d393134a84792412bf01a135ea1d6ea4eafef82aa4a5f739c4`, the same title, base, entry
+`0x8251F320` and base image `0xBF0000` as the USA disc's. Its own title update 2 (`TU_16L61UI_000000K000000.00000000000G5`,
+the package of that media ID; `default.xexp` SHA-256 `142443cf64d31b89cc647bb33104bbfce6021d06e3c700a914a2ee65281bad65`,
+target version 0.0.0.5, source digest of the PAL base) patches it to version **0.0.2.5**, image `0xC90000`, with the same nine
+language folders. The code generator ran on that image with this tree's configuration unchanged: 207 files, 15,564 functions,
+no hint rejected, no unresolved branch.
+
+**The patched PAL image is the same build as the patched USA image (0.0.2.1).** Checked against the USA facts above and this
+tree's address-keyed lists (`tools` of this port, no USA disc at hand, so the USA image itself was not diffed):
+
+| What | In the PAL tree |
+|---|---|
+| `config/renut_funcs.toml` (14), `overrides.toml` (54), the keep list (241), setjmp `0x82704060`, longjmp `0x82703F40` | every address a function start |
+| `hot/localized_bulk.txt` (999 machine copies), `hot/hand.txt` (6 hand copies) | all function starts |
+| `kameo_d3d.cpp` (11 hooks, 4 externs), `device.cpp`, `kameo_codes.cpp` (22 externs) | all function starts |
+| D3D's build qword at `0x827AB840` | `0x0002000008574000`, XDK 2.0.2135: the device layout holds |
+| memcpy `0x8255D400` (`std r3,-8(r1)`), memmove `0x8255BDA0` (`cmpw r3,r4`), the render guard `0x8228AF0C` (`lwzx r8,r9,r26`), `vpkd3d128` at `0x82551A34` | the same words |
+| Shader containers in the executable | 53 vertex, 94 pixel, 136 distinct: all 136 among the NRO's 139 |
+| Shader containers in the levels and models | 4,477 distinct, and the installer's `deko3d_glsl.bin` and `deko3d_shaders.bin` made from them (Node, 12 threads: 4,477 shaders, 8,601 variants, 0 failed) are byte for byte the release's reference files (SHA-256 `766bb63b…`, `223051f3…`) |
+
+So one NRO serves both discs: the recompiled code is the same, the machine and hand copies check their code hash against the
+loaded image at the first call anyway (`banjo_hot_guest.cpp`), the D3D hooks sit at the same addresses, and the data comes from
+the player's own files. What changes is the installer's gate: `release/manifest.json` names both `default.xex` / `default.xexp`
+pairs (`tools/make_release.py --edition`), each pointing at the same NRO, and the page says which edition it found. The
+runtime's patch check (`xex_module.cpp`, the base's signature digest against the patch's) is per pair, so the PAL disc needs the
+PAL update and the USA disc the USA one; a mixed pair the page refuses by hash. Region: `XGetGameRegion` answers 0xFFFF for
+both, as before. **Not yet run on a console with the PAL files.**
+
+**The code generator on Linux** (how the PAL image was made, Fedora 45 in a container with clang 23): `cmake --preset
+linux-amd64` in `sdk/` with `-DGIT_EXECUTABLE=/bin/false`, because `rex_version.cmake` reads this repository's `v1.0.0` tag as
+the SDK's and stops at "floor version (0.10) is behind tag version (1.0)"; and FFmpeg's generated `config.h` (the platform
+dispatcher, with `config_masseffect_wmv3.h` included after it), `libavutil/avconfig.h` and `libavutil/ffversion.h`, which are
+git-ignored and only on the Windows machine. `src/ui` needs `x11-xcb` and `wayland-client` even for the `rexglue` target. Then
+`REXGLUE_DUMP_IMAGE=out/renut_image.bin rexglue codegen renut_manifest.toml` in `app/`, 10.7 s.
