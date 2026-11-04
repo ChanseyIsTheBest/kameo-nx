@@ -75,6 +75,12 @@ CONFIGS = {
                                          {**LOG, 'banjo_renut_const_nan_flush': 'false'}),
     'configs/renut_no_gpu_round.toml': ('without the GPU round of 2026-11-03', {**LOG, **GPU_ROUND_OFF}),
     'configs/renut_audit_off.toml': ('without the renderer fixes matched to RePowered', {**LOG, **AUDIT_OFF}),
+    'configs/renut_tlb.toml': ('the log, and the memory latency test 90 s after the first report',
+                               {**LOG, 'banjo_tlb_test_s': '90'}),
+    'configs/renut_no_window_blocks.toml': ('the game memory on 4 KB pages, as in version 1.0.0',
+                                            {**LOG, 'banjo_tlb_test_s': '90', 'banjo_window_blocks': 'false'}),
+    'configs/renut_no_code_blocks.toml': ("the NRO's code on 4 KB pages, as in version 1.0.0",
+                                          {**LOG, 'banjo_tlb_test_s': '90', 'banjo_code_blocks': 'false'}),
 }
 
 
