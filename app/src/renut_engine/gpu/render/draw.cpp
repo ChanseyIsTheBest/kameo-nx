@@ -312,6 +312,11 @@ REXCVAR_DEFINE_INT32(banjo_renut_split_frame_mb, 192, "Banjo/Enhancements",
                      "GPU and the next ring slot takes over, nothing presented. The same picture. 0: off, and a big "
                      "level's first frames can run the console out of memory")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): WholeCopyFits.
+REXCVAR_DEFINE_INT32(banjo_renut_whole_over_cap_mb, 256, "Banjo/Enhancements",
+                     "A whole-buffer copy may take the stream cache this far past banjo_renut_stream_cache_mb, so that "
+                     "the range copies it replaces can go. The same picture. 0: refused at the limit like any other copy")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-04): ResolveStateLocked.
 REXCVAR_DEFINE_BOOL(banjo_renut_resolve_clears_both, true, "Banjo/Enhancements",
                     "A resolve's clear flags clear both surfaces they name, as on the console: imposters and portraits "
@@ -4693,6 +4698,18 @@ void ClearWholeLast() {
   ++g_geometry_gen;  // (and geometry objects' answers)
 }
 
+// kameo-nx (2026-11-04, console rc16 run, 3 fps in the big level): range copies reach the cache's limit first, because a
+// buffer written by the load can't have a whole copy yet, and a range copy needs only kStableFlushes kicks, which a split
+// frame gets through at once. Then the whole copies that would replace those ranges were refused, and the ranges, still
+// drawn every frame, never went idle: 600 MB of vertices converted a frame. A bigger limit only moved the point where it
+// happens. In the same run, once the idle pass made room, 33 MB of whole copies replaced 197.5 MB of ranges, and 1 fps
+// became 48. So a whole copy may pass the limit by banjo_renut_whole_over_cap_mb; the range copies stay refused until
+// DropReplacedRanges brings the total back down.
+bool WholeCopyFits(uint64_t bytes) {
+  static const uint64_t over = uint64_t(std::max(REXCVAR_GET(banjo_renut_whole_over_cap_mb), 0)) << 20;
+  return g_stream_cache_bytes + bytes <= banjo::renut_gpu::StreamCacheMaxBytes(kStreamCacheMaxBytes) + over;
+}
+
 CachedStream *WholeStreamCopy(const StreamKey &key, const HostVertexStream &hs) {
   WholeLastStream &last = g_whole_last_stream[key.stream % kMaxVertexStreams];
   if (!last.c || !(last.key == key))
@@ -4707,7 +4724,7 @@ CachedStream *WholeStreamCopy(const StreamKey &key, const HostVertexStream &hs) 
   if (!WholeRangeHeld(key.guest, size_t(key.count) * key.stride, c.whole_seen))
     return WholeMiss<CachedStream>(kWhyStreamWritten);
   const u32 bytes = key.count * hs.host_stride;
-  if (g_stream_cache_bytes + bytes > banjo::renut_gpu::StreamCacheMaxBytes(kStreamCacheMaxBytes)) {
+  if (!WholeCopyFits(bytes)) {
     ++g_stream_cache_refused;
     return WholeMiss<CachedStream>(kWhyStreamFull);
   }
@@ -4743,7 +4760,7 @@ CachedIndices *WholeIndexCopy(const IndexKey &key) {
   if (!WholeRangeHeld(key.src, guest_bytes, c.whole_seen))
     return WholeMiss<CachedIndices>(kWhyIndexWritten);
   const u32 bytes = u32(guest_bytes);
-  if (g_stream_cache_bytes + bytes > banjo::renut_gpu::StreamCacheMaxBytes(kStreamCacheMaxBytes)) {
+  if (!WholeCopyFits(bytes)) {
     ++g_stream_cache_refused;
     return WholeMiss<CachedIndices>(kWhyIndexFull);
   }
@@ -11361,7 +11378,10 @@ void ForgetVertexDeclarationLocked(u32 declaration_va) {
 void DropReplacedRanges() {
   if (g_whole_spans.empty() || g_stream_cache_frame - g_whole_spans.front().frame < kWholeReplaceFrames)
     return;
-  if (g_stream_cache_frame % kWholeReplacePeriod && banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed) != 54)
+  // kameo-nx (2026-11-04): every frame while past the limit (WholeCopyFits): 16 frames are 5 s at the 3 fps it is for.
+  const bool over_limit = g_stream_cache_bytes > banjo::renut_gpu::StreamCacheMaxBytes(kStreamCacheMaxBytes);
+  if (!over_limit && g_stream_cache_frame % kWholeReplacePeriod &&
+      banjo::renut_gpu::g_ab_off.load(std::memory_order_relaxed) != 54)
     return;  // banjo-nx (2026-10-28): kWholeReplacePeriod (A/B 54: every frame, as before)
   const auto ready = std::find_if(g_whole_spans.begin(), g_whole_spans.end(), [](const WholeSpan &w) {
     return g_stream_cache_frame - w.frame < kWholeReplaceFrames;

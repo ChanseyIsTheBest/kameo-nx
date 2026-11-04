@@ -396,7 +396,19 @@ The render thread is at 103 %, in `ConvertVertices` under `FlushVertexFillsLocke
 
 **This probably also explains the level-load crash:** the same level's load in this run (12:48:19) shows `stream cache full 17102` with 18 GB through the ring in 10 s. That points to vertex data refused at this limit rather than bone constants. rc12's crash log has no 10 s report from the load itself, so it can't confirm this. The limit isn't the only heavy source, though: rc11's battle on this level put 2-3 GB through the ring per 10 s with the cache at 45-137 MB and no refusals, so `kind` draws (fans, quads, inline vertices, skinned once) cost a lot on their own.
 
-**To test:** `banjo_renut_stream_cache_mb = 768` (`configs/renut_cache768.toml`), which needs no new build. How much the scene needs isn't known: with 256 MB kept and up to 600 MB converted per frame, it could be up to about 860 MB, less whatever overlaps. Whole-buffer copies should be more compact than ranges, and ranges kept by earlier draws may crowd them out, because `kStableFlushes` (3) is reached within a single frame once frames are split.
+**A bigger limit did not help.** The user ran `banjo_renut_stream_cache_mb = 768` and reported no improvement. That run's renderer log is missing: the `renut_001` sent was byte-identical to the 256 MB run's, and its `rex_profile` stops about 40 s in, at 3.3 fps with 1,781 MB/s through the ring. So the cache's state at 768 MB wasn't seen.
+
+**The cause: range copies lock out the whole copies that would replace them.** The first slowdown in the same run shows it:
+
+| Window | Frames | Refused, dropped by the idle pass | Cache | Whole copies made | Ranges replaced |
+|---|---|---|---|---|---|
+| 12:48:09 | 189 | 0 | 256 MB | 21.4 MB | 0.5 MB |
+| 12:48:19 | 10 | 0 | 256 MB | 0 | 0 |
+| 12:48:29 | 245 | 112,939, 208.5 MB | 105.9 MB | 33.0 MB | 197.5 MB |
+
+Once the idle pass made room, 33 MB of whole copies replaced 197.5 MB of ranges, and 1 fps became 48. In the second slowdown the pass at 60 frames found only 1.3 MB idle. It needs copies unread for `kPressureIdleFrames` (150), which is 50 s at 3 fps, and ranges still being drawn never go idle at all. A range copy needs only `kStableFlushes` (3) kicks, which a split frame gets through at once, while a buffer the load just wrote can't have a whole copy yet, so the ranges always arrive first.
+
+**Fix, rc17:** `WholeCopyFits` lets a whole copy pass the limit by `banjo_renut_whole_over_cap_mb` (default 256). Range copies stay refused at the limit. `DropReplacedRanges` runs every frame while the cache is over the limit, instead of every 16 frames. Draws of kinds that can't go whole (fans, quads, inline vertices) stay on ranges, so some cost may remain.
 
 ## Crash at the Microsoft logo (rc13, 2026-11-04)
 

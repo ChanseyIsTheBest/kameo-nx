@@ -25,7 +25,7 @@ void SetUserDataRoot(const std::filesystem::path &root);
 // (ReXApp::OnPostSetup).
 void InstallPackages(rex::Runtime *runtime);
 
-// Kameo: tells the game who is signed in before it starts, so its DLC scan runs once. Same timing.
+// Kameo: tells the game who is signed in before it starts, so its DLC scan runs once. Call it at the same point.
 void SeedSignInState(rex::Runtime *runtime);
 
 } // namespace renut::dlc

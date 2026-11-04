@@ -3,7 +3,20 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: a fix for the "problem with the disc" message, and probably for the crash during the Microsoft logo.
+New in this package: a fix for the 3 fps area in the big level. Nothing else changed since rc16.
+
+NOT RUN on your console. Raising the cache limit to 768 MB did not help, and this fix is aimed at why.
+
+The cause: draws get partial copies of their vertex data first. Those filled the vertex cache, and then the compact whole-buffer copies that would replace them were refused. The partial copies stayed in use, so nothing ever freed up, and the CPU reconverted about 600 MB of vertices every frame. Now whole-buffer copies may go 256 MB over the limit, and the partial copies they replace are dropped. It should not change the picture.
+
+What to check:
+1. The slow area, and the loading stretch of that level. Use the shipped limit: stream cache 256 MB, not the 768 MB test config.
+2. Please use configs/renut_profile.toml as kameo.toml, and send the NEWEST renut log. Last time renut_001.log was still the run before. In its "whole buffers" lines I want "cache full" near 0 and "cache" settling well under 512 MB. "upload ring" should be far below 17,000 MB per 10 s.
+3. Any "no new chunk" line: that means memory ran short.
+
+If it misbehaves, banjo_renut_whole_over_cap_mb = 0 in kameo.toml turns it off.
+
+From rc16: a fix for the "problem with the disc" message, and probably for the crash during the Microsoft logo. You confirmed the loading problem is gone.
 
 The cause: at startup our kernel tells the game the sign-in changed. Kameo's DLC scan treats that as a reason to start over, so it closed its DLC packs and scanned again while DLC audio was still loading. Cues from a bank still loading got added twice, and the game calls that a bad disc. Now the game knows from the start that you are signed in, so the scan runs once and the packs stay mounted. Other ports don't hit this because their games don't restart a scan on that notice.
 
