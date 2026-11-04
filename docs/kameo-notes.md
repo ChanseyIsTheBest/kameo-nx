@@ -468,12 +468,20 @@ From the user's console run of rc10: a corrupted dialogue portrait, and glowing 
 
 **The ring columns over Kameo's hands are not one of these.** They are cracked-ice decals (a 128x128 BC2 texture) she leaves on the wall, and they are in a hardware video too. Column contrast in the blue channel: hardware 10.1 and 8.0, ours 14.3 and 11.3, ours after blur and JPEG 9.3 and 7.5, at nearly the same x. That is one frame and a simulated codec, so it suggests rather than proves they match.
 
+**The second pass, at the user's request to match RePowered wherever nothing conflicts (rc18, 2026-11-04).** All from its MIT source, with keys. None has been confirmed on the console yet.
+
+| Key | What changed |
+|---|---|
+| `banjo_renut_last_pixel_shader` | My rc11 rule was incomplete. RePowered also keeps a null shader during the game's shadow pass (GeneratingShadowMap: 0x82B70B8F in the original, 0x82BCE10D in the update, set by 8226FC90 and cleared by 8226FF60). The flag is read on the game's thread and travels with the draw (`DrawCall::shadow_pass`). Without it, coloured patches appeared on the ground and changed with the player's form. That they are shadow-volume stencil polygons is inferred from RePowered's `renderShadowVolumeRecord` and from their colours following the last shader |
+| `banjo_renut_dxn_swap` | The two BC4 halves of each DXN block swapped on upload (`ReadLevel`), which RePowered says otherwise transposes X and Y of every normal map. I recalled that Xenia doesn't do this, unchecked, so there is still no independent evidence: judge it on hardware footage |
+| `banjo_renut_fmv_orb_skip` | The white disk over the FMV orb isn't drawn: PS 3547764B6B934FEE with 192 indices. RePowered also checks 65 vertices, which ours doesn't know at that point. It's a workaround with no known cause, and the scene hasn't been reached |
+
+**Compared and matching already:** sampler LOD bias and border colours, alpha to coverage off at one sample, polygon offset, ring-written draws (`drawTube` and the inlined packet writers), and cube face layout. **Left out because they change the picture or cost too much on the console:** bilinear shadow filtering, bigger shadow maps, MSAA, widescreen, HUD layout and stereo. **Left out because they belong to its renderer's design:** draw merging, stale offscreen passes and the surface routing.
+
 **Open, nothing changed:**
 - **A resolve with no rectangle.** RePowered says the guest means the current viewport. The update's own D3DDevice_Resolve (820C5028) says otherwise: a null rectangle becomes (0,0) to the destination's size, and it reads no viewport word. Ours already does that, so nothing changed. If imposters still show the wrong model after the fix below, look here again.
-- **DXN channel order.** RePowered swaps the two BC4 blocks of every DXN texture on upload ("skin reads as hard and metallic" otherwise). Ours does not. I recall Xenia does not either, unchecked, so one is wrong and I have no evidence which. A real normal map would tell: brick mortar lines put their energy in Y.
-- **The white disk over the FMV orb.** RePowered skips one draw by hash, PS 3547764B6B934FEE, as a workaround with no cause. Ours draws it. Scene not reached.
 - **Blue and pink dots on the same walls as the orange ones.** Not identified. They may be glows, in which case the occlusion fix covers them, or the sprites rc10 made visible.
-- **The glitter around the teleport pad in the user's save.** Heavy white hexagons and rings in `emu71save` on rc10. Not compared with rc9, and it may be correct.
+- **The glitter around the teleport pad (fairy ring).** Heavy white hexagons and rings on the emulator. The user says this is emulator-only, so it isn't being fixed.
 - **Grass edges.** RePowered multisamples, which lets alpha-to-mask foliage cover partial pixels. The console has one sample. A cost decision.
 - **The wet lens.** RePowered replaces a vertex shader that draws window-pixel quads with the viewport off. Not checked here.
 
