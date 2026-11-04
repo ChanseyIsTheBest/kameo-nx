@@ -306,6 +306,11 @@ REXCVAR_DEFINE_BOOL(banjo_renut_host_packets, false, "Banjo/Enhancements",
                     "device state (a key the recording threads make as they record); a later draw of the same state "
                     "takes it instead of deriving it again. Exact: the same state, and every epoch the answers depend on")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): ResolveStateLocked.
+REXCVAR_DEFINE_BOOL(banjo_renut_resolve_clears_both, true, "Banjo/Enhancements",
+                    "A resolve's clear flags clear both surfaces they name, as on the console: imposters and portraits "
+                    "need it. Off clears only the surface resolved. Changes the picture, towards the original")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-04): LastPixelShaderApplies.
 REXCVAR_DEFINE_BOOL(banjo_renut_last_pixel_shader, true, "Banjo/Enhancements",
                     "A colour draw with no pixel shader bound uses the last one bound, as the console's GPU does; off "
@@ -12388,6 +12393,29 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
     const u32 clear_flags = ((flags & 0x100) ? 1u : 0u) | ((flags & 0x200) ? 0x30u : 0u);
     ClearTargets(t, clear_flags, rect, clear_color ? clear_color : kBlack, clear_depth,
                  clear_stencil);
+    // kameo-nx (2026-11-04, the user's console run: exploded far-away goblins, broken dialogue portraits): the flags name
+    // what to clear whichever surface was resolved, and the other one is the device's. The imposter renderer (82102280)
+    // clears its scratch pad once per batch, then resolves each model's colour with 0x300 so the next starts clean. With
+    // only the colour cleared each model was depth-tested against the last one's depth, and only what was nearer drew.
+    // Noted by Kameo: RePowered, by MaxDeadBear and BiRabittoh (MIT: THIRD_PARTY_NOTICES.md).
+    static const bool both = REXCVAR_GET(banjo_renut_resolve_clears_both);
+    const u32 other_flags = surface->depth ? clear_flags & 1u : clear_flags & 0x30u;
+    if (both && other_flags) {
+      HostSurface *other = GetHostSurfaceLocked(
+          device.U32(surface->depth ? d3d::kDeviceOffsetRenderTargets : d3d::kDeviceOffsetDepthStencil));
+      if (other && other != surface) {
+        Targets o;
+        if (other->depth)
+          o.depth = other;
+        else
+          o.colors[o.color_count++] = other;
+        o.width = other->width;
+        o.height = other->height;
+        o.scale = other->scale;
+        ClearTargets(o, other_flags, ClampRect(source_rect, o.width, o.height), clear_color ? clear_color : kBlack,
+                     clear_depth, clear_stencil);
+      }
+    }
   }
 }
 

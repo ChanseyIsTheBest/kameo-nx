@@ -3,7 +3,19 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: four rendering fixes from your rc10 run and the audit against RePowered. All change the picture, towards the original.
+New in this package: the fix for the broken portraits and the exploded far-away goblins. Nothing else changed since rc11.
+
+NOT RUN. It compiles. It comes from reading the game's code and our trace, so your console run is its first test.
+
+The cause: the game draws these models one at a time on a scratch surface, and after each it asks for colour and depth to be cleared for the next one. We only cleared the colour, so each model was depth-tested against the one before and only the nearer parts drew.
+
+What to check:
+1. Portraits in dialogue, with your save.
+2. The goblin army from your last screenshot, and the odd hatched plant shapes in the same shot.
+3. The menus and the opening: this also clears the scene's depth in a few places where the game asks and we did not before. If something looks wrong, set banjo_renut_resolve_clears_both = false in kameo.toml and tell me whether that changes it.
+4. Please send renut_001.log from that battle scene again. Your last log had 16 seconds of failed upload buffers there, with GPU memory full at 1,882 MB. I do not know the cause yet, and draws can be lost while it happens. The line to look for is "Upload ring".
+
+From rc11: the stray lights are fixed, confirmed by you. Its four rendering fixes from your rc10 run and the audit against RePowered change the picture, towards the original.
 
 NOT RUN. These compile and link. They have not been run on the emulator or anywhere else, so this is their first test. A mistake in one could make things worse.
 
