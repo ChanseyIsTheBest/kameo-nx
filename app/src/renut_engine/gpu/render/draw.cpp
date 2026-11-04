@@ -74,6 +74,20 @@ REXCVAR_DEFINE_STRING(banjo_renut_diag_stream_dump_vs, "", "Banjo/Renut",
 REXCVAR_DEFINE_INT32(banjo_renut_diag_draw_log_s, 0, "Banjo/Renut",
                      "Diagnostic: this many seconds after the first draw, log every draw of the next two frames "
                      "([drawlog]: shaders, counts, target, state; 0 = off)");
+REXCVAR_DEFINE_INT32(banjo_renut_diag_draw_log_every_s, 0, "Banjo/Renut",
+                     "Diagnostic: with banjo_renut_diag_draw_log_s, log two more frames every this many seconds (0 = once)");
+REXCVAR_DEFINE_BOOL(banjo_renut_diag_bake_log, false, "Banjo/Renut",
+                    "Diagnostic: every draw, clear and resolve on a square colour target of 64 to 256 texels ([bakelog], "
+                    "first 12000 lines), with the pixel shader's first constants: Kameo's baked ground tiles");
+REXCVAR_DEFINE_INT32(banjo_renut_diag_skip_scan_s, 0, "Banjo/Renut",
+                     "Diagnostic: this many seconds after the first draw, find a draw by what vanishes: in each step of "
+                     "banjo_renut_diag_skip_step_s the depth-tested draws into the big target whose 12-bit id (hash of shaders, "
+                     "index buffer and range) has that step's bit set are not drawn; step 12 draws everything. [skipscan] "
+                     "lines name the steps. A picture with holes: a measurement. 0 = off");
+REXCVAR_DEFINE_INT32(banjo_renut_diag_skip_step_s, 8, "Banjo/Renut", "Diagnostic: see banjo_renut_diag_skip_scan_s");
+REXCVAR_DEFINE_STRING(banjo_renut_diag_skip_log_id, "", "Banjo/Renut",
+                      "Diagnostic: log the draws of these 12-bit ids (hex, comma-separated; see banjo_renut_diag_skip_scan_s) with "
+                      "their textures and the pixel shader's constants ([drawlog], first 12000 lines)");
 REXCVAR_DEFINE_STRING(banjo_renut_diag_blend_skip_exclude, "", "Banjo/Renut",
                       "Diagnostic: pixel shader hashes (hex, comma separated) banjo_gpu_blend_skip leaves alone");
 
@@ -316,6 +330,12 @@ REXCVAR_DEFINE_INT32(banjo_renut_split_frame_mb, 192, "Banjo/Enhancements",
 REXCVAR_DEFINE_BOOL(banjo_renut_fmv_orb_skip, true, "Banjo/Enhancements",
                     "RePowered's workaround: the white disk that hides the video in the FMV orb is not drawn (one draw of "
                     "pixel shader 3547764B6B934FEE, 192 indices). Off draws it")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): CopyAndSwapGroup.
+REXCVAR_DEFINE_BOOL(banjo_renut_const_nan_flush, true, "Banjo/Enhancements",
+                    "Float constants that are NaN or infinity reach the shaders as 0, as Kameo: RePowered does. The console's "
+                    "GPU multiplies anything by 0 to 0 and the host's keeps the NaN: the coloured patches on the ground of "
+                    "Badlands. Off: the words as they are")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-04): WholeCopyFits.
 REXCVAR_DEFINE_INT32(banjo_renut_whole_over_cap_mb, 256, "Banjo/Enhancements",
@@ -2175,7 +2195,14 @@ constexpr u32 kConstantGroupBytes = 4 * 16;
 // bytes swapped (the host's little-endian lanes), from one load: four 16-byte loads, four stores, four REV32s and four
 // stores on the A57 (the loops before compiled to sixteen scalar load / REV / store triples and a separate copy). The
 // same bytes.
-[[gnu::always_inline]] inline void CopyAndSwapGroup(const u8 *guest, u8 *held, u8 *swapped) {
+//
+// kameo-nx (2026-11-04, the coloured patches, banjo_renut_const_nan_flush; the rule from Kameo: RePowered's
+// constant_buffers.cpp SwapConstantChunk: MIT, THIRD_PARTY_NOTICES.md): a word with every exponent bit set goes to the shader
+// as 0. Xenos multiplies anything by 0 to 0, NaN and infinity included; the host's GPU keeps the NaN. Kameo's terrain vertex
+// shaders read c[30 + the vertex colour's red byte], multiply it by a weight that is 0 on these vertices and add the
+// vertex colour, and the registers past c92 hold what the game never wrote as floats: (NaN, 0, NaN) at c141 made every
+// triangle with a vertex of that red value green. 'held' keeps the guest's bytes (the next compare is against those).
+[[gnu::always_inline]] inline void CopyAndSwapGroup(const u8 *guest, u8 *held, u8 *swapped, bool nan_flush) {
   static_assert(kConstantGroupBytes == 64);
 #if defined(__aarch64__)
   const uint8x16_t a = vld1q_u8(guest), b = vld1q_u8(guest + 16), c = vld1q_u8(guest + 32), d = vld1q_u8(guest + 48);
@@ -2183,18 +2210,34 @@ constexpr u32 kConstantGroupBytes = 4 * 16;
   vst1q_u8(held + 16, b);
   vst1q_u8(held + 32, c);
   vst1q_u8(held + 48, d);
-  vst1q_u8(swapped, vrev32q_u8(a));
-  vst1q_u8(swapped + 16, vrev32q_u8(b));
-  vst1q_u8(swapped + 32, vrev32q_u8(c));
-  vst1q_u8(swapped + 48, vrev32q_u8(d));
+  uint32x4_t wa = vreinterpretq_u32_u8(vrev32q_u8(a)), wb = vreinterpretq_u32_u8(vrev32q_u8(b)),
+             wc = vreinterpretq_u32_u8(vrev32q_u8(c)), wd = vreinterpretq_u32_u8(vrev32q_u8(d));
+  if (nan_flush) {
+    const uint32x4_t exponent = vdupq_n_u32(0x7F800000u);
+    wa = vbicq_u32(wa, vceqq_u32(vandq_u32(wa, exponent), exponent));
+    wb = vbicq_u32(wb, vceqq_u32(vandq_u32(wb, exponent), exponent));
+    wc = vbicq_u32(wc, vceqq_u32(vandq_u32(wc, exponent), exponent));
+    wd = vbicq_u32(wd, vceqq_u32(vandq_u32(wd, exponent), exponent));
+  }
+  vst1q_u8(swapped, vreinterpretq_u8_u32(wa));
+  vst1q_u8(swapped + 16, vreinterpretq_u8_u32(wb));
+  vst1q_u8(swapped + 32, vreinterpretq_u8_u32(wc));
+  vst1q_u8(swapped + 48, vreinterpretq_u8_u32(wd));
 #else
   u32 lanes[kConstantGroupBytes / 4];
   std::memcpy(lanes, guest, kConstantGroupBytes);
   std::memcpy(held, lanes, kConstantGroupBytes);
-  for (u32 &lane : lanes)
+  for (u32 &lane : lanes) {
     lane = std::byteswap(lane);
+    if (nan_flush && (lane & 0x7F800000u) == 0x7F800000u)
+      lane = 0;
+  }
   std::memcpy(swapped, lanes, kConstantGroupBytes);
 #endif
+}
+inline bool ConstNanFlushOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_const_nan_flush);
+  return on;
 }
 
 // The groups holding a register the shader reads.
@@ -2433,7 +2476,7 @@ UploadAllocation UploadFloatConstants(const FloatConstants &constants, const u32
     const u32 group = u32(std::countl_zero(remaining));
     remaining &= ~(uint64_t(1) << (63 - group));
     CopyAndSwapGroup(constants.Register(group * 4), last.bytes + group * kConstantGroupBytes,
-                     out + group * kConstantGroupBytes);  // banjo-nx (2026-10-28)
+                     out + group * kConstantGroupBytes, ConstNanFlushOn());  // banjo-nx (2026-10-28)
   }
   // Every register of those groups is in the upload, with the bytes it has
   // now.
@@ -2655,7 +2698,7 @@ void PushFloatConstants(plume::RenderCommandList *cmd, const FloatConstants &con
       // banjo-nx (2026-10-27, render thread night): swapped on the way (a separate pass over the run before);
       // banjo-nx (2026-10-28): both copies from one NEON load (CopyAndSwapGroup).
       CopyAndSwapGroup(constants.Register(group * 4), last.bytes + group * kConstantGroupBytes,
-                       reinterpret_cast<u8 *>(lanes + k * (kConstantGroupBytes / 4)));
+                       reinterpret_cast<u8 *>(lanes + k * (kConstantGroupBytes / 4)), ConstNanFlushOn());
       last.valid[group / 8] |= 0xFu << (group % 8 * 4);
       for (u32 q = 0; q < 4; ++q)
         last.lit_owner[group * 4 + q] = nullptr;  // banjo-nx (2026-10-27): the device's bytes now
@@ -4369,6 +4412,30 @@ bool StreamDumpLog(const ShaderRecord &vs, u32 stream, const StreamSource &src, 
             "draw count {}: guest {}host {}",
             vs.hash, stream, src.cpu_address, src.stride, hs.host_stride, src.endian, first, count, call.primitive,
             call.count, guest_words, host_words);
+  // kameo-nx (2026-11-04, the coloured patches): the terrain vertex's two colour words (10 and 11 of 13), counted.
+  static uint32_t hists = 0;
+  if (guest && src.stride == 52 && hists < 8) {
+    ++hists;
+    std::map<uint64_t, u32> counts;
+    for (u32 v = 0; v < count; ++v) {
+      const u8 *at = guest + size_t(v) * src.stride + 40;
+      const uint64_t key = uint64_t(u32(at[0]) << 24 | u32(at[1]) << 16 | u32(at[2]) << 8 | at[3]) << 32 |
+                           (u32(at[4]) << 24 | u32(at[5]) << 16 | u32(at[6]) << 8 | at[7]);
+      ++counts[key];
+    }
+    std::vector<std::pair<u32, uint64_t>> top;
+    for (const auto &[key, n] : counts)
+      top.push_back({n, key});
+    std::sort(top.rbegin(), top.rend());
+    RGPU_INFO("[streamhist] cpu {:08X} first {} count {}: {} kinds", src.cpu_address, first, count, top.size());
+    std::map<u32, u32> byte0;
+    for (const auto &[key, n] : counts)
+      byte0[u32(key >> 32) & 0xFF] += n;
+    for (const auto &[index, n] : byte0)
+      RGPU_INFO("[streamhist]   low byte of word 10 = {:02X}: {} vertices", index, n);
+    for (size_t i = 0; i < top.size() && i < 24; ++i)
+      RGPU_INFO("[streamhist]   words {:08X} {:08X}: {} vertices", u32(top[i].second >> 32), u32(top[i].second), top[i].first);
+  }
   return true;
 }
 
@@ -7412,39 +7479,118 @@ bool DrawsWithoutPixelShader(const GuestDevice &device, const Targets &t, const 
   return ((color_control >> 4) & 1) == 0;  // alpha to coverage, as MakeKey's
 }
 
+// kameo-nx (2026-11-04, the coloured patches, banjo_renut_diag_bake_log): the ground far from the player is one shader over
+// textures the game bakes into square targets of 64 to 256 texels and resolves.
+uint32_t g_bake_lines = 0;
+bool BakeLogTarget(u32 width, u32 height) {
+  static const bool on = REXCVAR_GET(banjo_renut_diag_bake_log);
+  return on && width == height && width >= 64 && width <= 256 && g_bake_lines < 12000;
+}
+
+// kameo-nx (2026-11-04, the coloured patches, banjo_renut_diag_skip_scan_s): a draw's id, the same every frame for the same
+// mesh and material, whatever draws before it.
+u32 DrawScanId(const GuestDevice &device, const DrawCall &call, const ShaderRecord *vs, const ShaderRecord *ps) {
+  constexpr uint64_t k = 0x9E3779B97F4A7C15ull;
+  uint64_t h = (vs ? vs->hash : 0) * k;
+  h = (h ^ (ps ? ps->hash : 0)) * k;
+  h = (h ^ call.count) * k;
+  h = (h ^ call.start_index ^ (uint64_t(u32(call.base_vertex)) << 32)) * k;
+  h = (h ^ device.U32(d3d::kDeviceOffsetIndexBuffer)) * k;
+  return u32(h >> 48) & 0xFFFu;
+}
+bool DrawScanIdLogged(u32 id) {
+  static const std::vector<u32> ids = [] {
+    std::vector<u32> out;
+    const std::string v = REXCVAR_GET(banjo_renut_diag_skip_log_id);
+    for (size_t at = 0; at < v.size();) {
+      size_t end = v.find(',', at);
+      if (end == std::string::npos)
+        end = v.size();
+      out.push_back(u32(std::strtoul(v.substr(at, end - at).c_str(), nullptr, 16)));
+      at = end + 1;
+    }
+    return out;
+  }();
+  if (std::find(ids.begin(), ids.end(), id) == ids.end())
+    return false;
+  static std::chrono::steady_clock::time_point last[0x1000];
+  const auto now = std::chrono::steady_clock::now();
+  if (now - last[id & 0xFFF] < std::chrono::seconds(10))
+    return false;
+  last[id & 0xFFF] = now;
+  return true;
+}
+bool DrawScanSkip(const GuestDevice &device, const DrawCall &call, const ShaderRecord *vs, const ShaderRecord *ps,
+                  const Targets &targets, const PipelineKey &key) {
+  static const int32_t at = REXCVAR_GET(banjo_renut_diag_skip_scan_s);
+  if (at <= 0)
+    return false;
+  using Clock = std::chrono::steady_clock;
+  static const Clock::time_point start = Clock::now() + std::chrono::seconds(at);
+  static const int32_t step_s = std::max(REXCVAR_GET(banjo_renut_diag_skip_step_s), 1);
+  static int32_t logged_step = -1;
+  const Clock::time_point now = Clock::now();
+  if (now < start)
+    return false;
+  const int32_t step = int32_t(std::chrono::duration_cast<std::chrono::seconds>(now - start).count() / step_s);
+  if (step != logged_step) {
+    logged_step = step;
+    RGPU_INFO("[skipscan] step {} (bit {}), frame {}", step, step % 13, TextureFrameLocked());
+  }
+  const int32_t bit = step % 13;
+  if (bit == 12 || !targets.color_count || targets.colors[0]->width < 1000 || !(key.depth_control & 2))
+    return false;
+  return (DrawScanId(device, call, vs, ps) >> bit) & 1;
+}
+
 // banjo-nx (2026-10-18, matching RenderDoc captures of Ryujinx to the game's shaders): banjo_renut_diag_draw_log_s
 // seconds after the first draw, every draw of the next two frames: its shaders, counts, target and state, in order.
 void DrawLog(const GuestDevice &device, const DrawCall &call, const Geometry &geometry, const ShaderRecord *vs,
              const ShaderRecord *ps, const Targets &targets, const PipelineKey &key, const SharedConstants &sc,
              u32 export_count) {
   static const int32_t at = REXCVAR_GET(banjo_renut_diag_draw_log_s);
-  if (at <= 0)
+  const HostSurface *c0 = targets.color_count ? targets.colors[0] : nullptr;
+  static const bool id_log = !std::string(REXCVAR_GET(banjo_renut_diag_skip_log_id)).empty();
+  const u32 scan_id = id_log ? DrawScanId(device, call, vs, ps) : 0;
+  const bool id_logged = id_log && g_bake_lines < 12000 && DrawScanIdLogged(scan_id);
+  const bool bake = (c0 && BakeLogTarget(c0->width, c0->height)) || id_logged;
+  if (at <= 0 && !bake)
     return;
-  static const auto start = std::chrono::steady_clock::now();
-  static uint64_t first_frame = 0;
+  // kameo-nx (2026-11-04, the coloured patches): banjo_renut_diag_draw_log_every_s logs two more frames that often, so a
+  // run on the emulator's slow clock still catches the moment the picture shows.
+  using Clock = std::chrono::steady_clock;
+  static const int32_t every = REXCVAR_GET(banjo_renut_diag_draw_log_every_s);
+  static Clock::time_point next = Clock::now() + std::chrono::seconds(at);
+  static uint64_t log_from = 0, log_to = 0;
   static uint32_t ordinal = 0;
   static uint64_t ordinal_frame = 0;
   const uint64_t frame = TextureFrameLocked();
-  if (!first_frame) {
-    if (std::chrono::steady_clock::now() - start < std::chrono::seconds(at))
+  if (!bake) {
+    if (frame > log_to) {
+      const Clock::time_point now = Clock::now();
+      if (now < next)
+        return;
+      log_from = frame + 1;  // from the next whole frame
+      log_to = frame + 2;
+      next = every > 0 ? now + std::chrono::seconds(every) : Clock::time_point::max();
+    }
+    if (frame < log_from)
       return;
-    first_frame = frame + 1;  // from the next whole frame
   }
-  if (frame < first_frame || frame > first_frame + 1)
-    return;
   if (frame != ordinal_frame) {
     ordinal_frame = frame;
     ordinal = 0;
   }
-  const HostSurface *c0 = targets.color_count ? targets.colors[0] : nullptr;
   RGPU_INFO("[drawlog] frame {} draw {}: vs {:016X} ps {:016X} prim {} count {} -> {} {} inst {}{} target {}x{} fmt {} "
-            "x{} depth {} dc {:08X} blend {:08X} mask {:X} a2c {} vfetch {} bytes, exports {}",
+            "x{} depth {} dc {:08X} blend {:08X} mask {:X} a2c {} vfetch {} bytes, exports {} trim {:X} skip {} afunc {} "
+            "shadow {} rt {:08X}",
             frame, ordinal++, vs ? vs->hash : 0, ps ? ps->hash : 0, call.primitive, call.count,
             geometry.indexed ? "indices" : "vertices", geometry.indexed ? geometry.index_count : geometry.vertex_count,
             geometry.instance_count, call.tessellation ? " tess" : "", c0 ? c0->width : 0, c0 ? c0->height : 0,
             c0 ? int(c0->format) : -1, targets.color_count, targets.depth ? int(targets.depth->format) : -1,
             key.depth_control, key.blend_control[0], key.color_mask, key.alpha_to_coverage, sc.vertex_fetch_bytes,
-            export_count);
+            export_count, key.output_trim, key.blend_skip, key.alpha_func, int(call.shadow_pass),
+            device.U32(d3d::kDeviceOffsetRenderTargets));
   // kameo-nx (2026-11-03): each slot the shaders read and what it bound (the sky's glow samples a null texture).
   const u32 texture_mask =
       (vs && vs->entry ? vs->entry->textureFetchMask : 0) | (ps && ps->entry ? ps->entry->textureFetchMask : 0);
@@ -7455,6 +7601,61 @@ void DrawLog(const GuestDevice &device, const DrawCall &call, const Geometry &ge
               device.U32(d3d::kDeviceOffsetTextures + r * 4), fetch.dword[0], fetch.dword[1], fetch.dword[2], fetch.dword[3],
               fetch.dword[4], fetch.dword[5], sc.texture_indices[0][r], sc.texture_indices[1][r], sc.texture_indices[2][r],
               sc.sampler_indices[r]);
+  }
+  if (bake) {
+    const auto &pc = device.dev().m_Constants.PixelShaderF;
+    RGPU_INFO("[drawlog]   pc0 {:.3f} {:.3f} {:.3f} {:.3f} pc1 {:.3f} {:.3f} {:.3f} {:.3f} pc2 {:.3f} {:.3f} {:.3f} {:.3f} pc3 {:.3f} "
+              "{:.3f} {:.3f} {:.3f}",
+              float(pc[0][0]), float(pc[0][1]), float(pc[0][2]), float(pc[0][3]), float(pc[1][0]), float(pc[1][1]),
+              float(pc[1][2]), float(pc[1][3]), float(pc[2][0]), float(pc[2][1]), float(pc[2][2]), float(pc[2][3]),
+              float(pc[3][0]), float(pc[3][1]), float(pc[3][2]), float(pc[3][3]));
+    g_bake_lines += 2 + u32(std::popcount(texture_mask));
+    if (id_logged) {
+      RGPU_INFO("[drawlog]   id {:03X} index buffer {:08X} start {} base {} vertex fetch at {:08X} depth rt {:08X}", scan_id,
+                device.U32(d3d::kDeviceOffsetIndexBuffer), call.start_index, call.base_vertex,
+                device.U32(d3d::StreamSourceOffset(0)), device.U32(d3d::kDeviceOffsetDepthStencil));
+      for (u32 c = 4; c + 4 <= 32; c += 4) {
+        RGPU_INFO("[drawlog]   pc{} {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} "
+                  "{:.3f} {:.3f} {:.3f}",
+                  c, float(pc[c][0]), float(pc[c][1]), float(pc[c][2]), float(pc[c][3]), float(pc[c + 1][0]),
+                  float(pc[c + 1][1]), float(pc[c + 1][2]), float(pc[c + 1][3]), float(pc[c + 2][0]), float(pc[c + 2][1]),
+                  float(pc[c + 2][2]), float(pc[c + 2][3]), float(pc[c + 3][0]), float(pc[c + 3][1]), float(pc[c + 3][2]),
+                  float(pc[c + 3][3]));
+      }
+      g_bake_lines += 8;
+      // kameo-nx (2026-11-04, the coloured patches): the terrain's vertex shaders read a light colour from c[30 + index], the index
+      // a per-vertex attribute: the device's registers, and which ones the shader's mask says it reads.
+      if (vs && vs->entry) {
+        const u32 *m = vs->entry->floatConstants;
+        RGPU_INFO("[drawlog]   vs reads {:08X} {:08X} {:08X} {:08X} {:08X} {:08X} {:08X} {:08X}", m[0], m[1], m[2], m[3], m[4], m[5],
+                  m[6], m[7]);
+      }
+      const auto &vc = device.dev().m_Constants.VertexShaderF;
+      for (u32 c = 28; c + 4 <= 92; c += 4) {
+        RGPU_INFO("[drawlog]   vc{} {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} "
+                  "{:.3f} {:.3f} {:.3f}",
+                  c, float(vc[c][0]), float(vc[c][1]), float(vc[c][2]), float(vc[c][3]), float(vc[c + 1][0]),
+                  float(vc[c + 1][1]), float(vc[c + 1][2]), float(vc[c + 1][3]), float(vc[c + 2][0]), float(vc[c + 2][1]),
+                  float(vc[c + 2][2]), float(vc[c + 2][3]), float(vc[c + 3][0]), float(vc[c + 3][1]), float(vc[c + 3][2]),
+                  float(vc[c + 3][3]));
+      }
+      g_bake_lines += 17;
+      for (u32 c = 92; c + 4 <= 256; c += 4) {
+        bool any = false;
+        for (u32 k = 0; k < 4 && !any; ++k)
+          for (u32 j = 0; j < 4 && !any; ++j)
+            any = float(vc[c + k][j]) != 0.0f;
+        if (!any)
+          continue;
+        ++g_bake_lines;
+        RGPU_INFO("[drawlog]   vc{} {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} {:.3f} {:.3f} {:.3f} | {:.3f} "
+                  "{:.3f} {:.3f} {:.3f}",
+                  c, float(vc[c][0]), float(vc[c][1]), float(vc[c][2]), float(vc[c][3]), float(vc[c + 1][0]),
+                  float(vc[c + 1][1]), float(vc[c + 1][2]), float(vc[c + 1][3]), float(vc[c + 2][0]), float(vc[c + 2][1]),
+                  float(vc[c + 2][2]), float(vc[c + 2][3]), float(vc[c + 3][0]), float(vc[c + 3][1]), float(vc[c + 3][2]),
+                  float(vc[c + 3][3]));
+      }
+    }
   }
 }
 
@@ -8363,8 +8564,8 @@ bool FastExportReads(const GuestDevice &device, const DrawCall &call, const Shad
 // With no pixel shader bound the GPU keeps colouring with the last one loaded, unless the EDRAM is in depth-only mode
 // (5): fading models such as an absorbed baby warrior draw this way. A null shader is depth-only with no colour target
 // and for an occlusion query's test quad. By its address: a record can go when the game frees its shader.
-// Also not in the game's shadow pass, as RePowered has it: leaving that out painted the stencil polygons of the shadow
-// volumes in the last shader's colours, patches on the ground that changed with the player's form (console, rc17).
+// Also not in the game's shadow pass, as RePowered has it. (rc18 added this as the fix for the coloured patches on the
+// ground; the console showed it was not. Their cause is at CopyAndSwapGroup.)
 u32 g_last_pixel_shader_va = 0;
 bool g_fast_shadow_pass = false;  // the last draw's, for FastDrawLocked: the answer changes with no word of the device
 bool LastPixelShaderApplies(const GuestDevice &device, const DrawCall &call) {
@@ -8416,7 +8617,9 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
     Config c;
     c.on = REXCVAR_GET(banjo_renut_fast_draw) && REXCVAR_GET(banjo_renut_persistent_shared) &&
            REXCVAR_GET(banjo_renut_fetch_data_unread) && REXCVAR_GET(banjo_renut_chain_reuse);
-    c.draw_log = !REXCVAR_GET(banjo_renut_lean_diagnostics) || REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0;
+    c.draw_log = !REXCVAR_GET(banjo_renut_lean_diagnostics) || REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0 ||
+                 REXCVAR_GET(banjo_renut_diag_bake_log) || REXCVAR_GET(banjo_renut_diag_skip_scan_s) > 0 ||
+                 !std::string(REXCVAR_GET(banjo_renut_diag_skip_log_id)).empty();
     c.census = REXCVAR_GET(banjo_renut_diag_fast_census) || UnleashedCensusOn();
     c.verify = REXCVAR_GET(banjo_renut_fast_draw_verify);
     return c;
@@ -10992,9 +11195,16 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   }
   // banjo-nx (2026-10-20, from sa2-nx, banjo_renut_lean_diagnostics): the draw log's check once, not a call per draw.
   static const bool draw_log = !REXCVAR_GET(banjo_renut_lean_diagnostics) ||
-                               REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0;
-  if (draw_log)
+                               REXCVAR_GET(banjo_renut_diag_draw_log_s) > 0 || REXCVAR_GET(banjo_renut_diag_bake_log) ||
+                               REXCVAR_GET(banjo_renut_diag_skip_scan_s) > 0 ||
+                               !std::string(REXCVAR_GET(banjo_renut_diag_skip_log_id)).empty();
+  if (draw_log) {
     DrawLog(device, call, geometry, vs, ps, targets, key, sc, export_count);
+    if (DrawScanSkip(device, call, vs, ps, targets, key)) {
+      InvalidateFastDrawLocked();  // the next draw's state is found whole
+      return false;
+    }
+  }
   // banjo-nx (2026-10-19, banjo_renut_resolve_skip): the targets this draw can write.
   for (u32 i = 0; i < targets.color_count && i < key.color_count; ++i)
     if ((key.color_mask >> (4 * i)) & 0xF)
@@ -11619,6 +11829,11 @@ void ClearTargets(const Targets &t, u32 flags, const plume::RenderRect &rect, co
   if (banjo::renut_gpu::ResolveTraceOn()) {
     RGPU_INFO("[trace] clear {:X} rect ({},{})-({},{}) of {}x{}", flags, rect.left, rect.top, rect.right, rect.bottom,
               t.width, t.height);
+  }
+  if (t.color_count && BakeLogTarget(t.colors[0]->width, t.colors[0]->height)) {
+    ++g_bake_lines;
+    RGPU_INFO("[bakelog] frame {} clear {:X} rect ({},{})-({},{}) of {}x{} colour {:.3f} {:.3f} {:.3f} {:.3f}", TextureFrameLocked(),
+              flags, rect.left, rect.top, rect.right, rect.bottom, t.width, t.height, color[0], color[1], color[2], color[3]);
   }
   if (rect.right <= rect.left || rect.bottom <= rect.top)
     return;
@@ -12297,6 +12512,17 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
               u32(surface->samples), dest_texture_va, dest_x, dest_y, dest_level, dest_slice, r.x1, r.y1, r.x2, r.y2,
               flags, (flags & 0x100) ? "clear colour after " : "", (flags & 0x200) ? "clear depth after" : "");
   }
+  const bool bake_log = surface && !surface->depth && BakeLogTarget(surface->width, surface->height);
+  if (bake_log) {
+    ++g_bake_lines;
+    const ClearRect r = source_rect ? *source_rect : ClearRect{0, 0, -1, -1};
+    const auto *dest_header = dest_texture_va ? GuestPtr<const d3d::BaseTexture>(dest_texture_va) : nullptr;
+    RGPU_INFO("[bakelog] frame {} resolve {:08X} ({}x{} fmt {}) -> texture {:08X} page {:05X} at ({},{}) level {} slice {} rect "
+              "({},{})-({},{}) flags {:X} writes {} generation {}",
+              TextureFrameLocked(), source_va, surface->width, surface->height, u32(surface->format), dest_texture_va,
+              dest_header ? TextureFetch::FromHeader(dest_header->Format).BasePage() : 0u, dest_x, dest_y, dest_level, dest_slice,
+              r.x1, r.y1, r.x2, r.y2, flags, surface->writes, surface->generation);
+  }
   plume::RenderCommandList *cmd = s.command_list;
   static uint32_t depth_logged = 0;
 
@@ -12369,11 +12595,15 @@ void ResolveStateLocked(const u8 *device_state, u32 flags, const ClearRect *sour
       if (fits && banjo::renut_gpu::ResolveSkipOn() && dest->resolve_signature == sig) {
         // banjo-nx (2026-10-19, banjo_renut_resolve_skip): the same resolve of an unchanged source is in dest already.
         banjo::renut_gpu::CountSkippedResolve(false);
+        if (bake_log)
+          RGPU_INFO("[bakelog]   not done: the same resolve of an unchanged source");
       } else if (fits && slice == 0 && z == 0 && dest_level == 0 &&
                  HandOverResolveLocked(surface, dest, src, dest_x, dest_y, false)) {
         // kameo-nx (2026-11-03, banjo_deko3d_color_handover): left in the target's image; the target stays bound
         // (banjo_deko3d_resolve_keeps_target): nothing was drawn and no target changed.
         dest->resolve_signature = sig;
+        if (bake_log)
+          RGPU_INFO("[bakelog]   handed over");
         if (!banjo::renut_gpu::ResolveKeepsTargetOn())
           g_bound.framebuffer = nullptr;
       } else if (fits) {

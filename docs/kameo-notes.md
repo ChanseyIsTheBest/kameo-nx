@@ -472,7 +472,7 @@ From the user's console run of rc10: a corrupted dialogue portrait, and glowing 
 
 | Key | What changed |
 |---|---|
-| `banjo_renut_last_pixel_shader` | My rc11 rule was incomplete. RePowered also keeps a null shader during the game's shadow pass (GeneratingShadowMap: 0x82B70B8F in the original, 0x82BCE10D in the update, set by 8226FC90 and cleared by 8226FF60). The flag is read on the game's thread and travels with the draw (`DrawCall::shadow_pass`). Without it, coloured patches appeared on the ground and changed with the player's form. That they are shadow-volume stencil polygons is inferred from RePowered's `renderShadowVolumeRecord` and from their colours following the last shader |
+| `banjo_renut_last_pixel_shader` | My rc11 rule was incomplete. RePowered also keeps a null shader during the game's shadow pass (GeneratingShadowMap: 0x82B70B8F in the original, 0x82BCE10D in the update, set by 8226FC90 and cleared by 8226FF60). The flag is read on the game's thread and travels with the draw (`DrawCall::shadow_pass`). I added this as the fix for the coloured patches on the ground, and I was wrong: the console still showed them. Their cause is in "The coloured patches on the ground" below. The rule stays because RePowered has it; it has no console result of its own |
 | `banjo_renut_dxn_swap` | The two BC4 halves of each DXN block swapped on upload (`ReadLevel`), which RePowered says otherwise transposes X and Y of every normal map. I recalled that Xenia doesn't do this, unchecked, so there is still no independent evidence: judge it on hardware footage |
 | `banjo_renut_fmv_orb_skip` | The white disk over the FMV orb isn't drawn: PS 3547764B6B934FEE with 192 indices. RePowered also checks 65 vertices, which ours doesn't know at that point. It's a workaround with no known cause, and the scene hasn't been reached |
 
@@ -501,3 +501,40 @@ From the user's console run of rc10: a corrupted dialogue portrait, and glowing 
 | `banjo_renut_replay_lookahead`, `_shadow_sort`, `_texture_slot_skip`, `_inline_line_compare` | off | SLOWER ON THE CONSOLE, section 6b |
 
 Picture-changing keys set off for this port (N&B's choices, pixel-identical by default): `banjo_renut_smaa`, `banjo_renut_fur_shells_percent` 100, `banjo_renut_portrait_fur_shells_percent` 100, `banjo_renut_portrait_msaa_samples` 0.
+
+## The coloured patches on the ground (rc19, 2026-11-04)
+
+**Seen:** on the console in Badlands (level 004CFC24), flat coloured polygons on the plaza near the torches. Kameo showed green and yellow; the creeper showed yellow, magenta and red in the same places. The ground's detail showed through, and the edges followed the mesh's triangles.
+
+**Cause:** a difference in how the two GPUs multiply. On Xenos anything times 0 is 0, NaN and infinity included. On the Switch's GPU, and in Ryujinx, 0 times NaN is NaN.
+
+The terrain's vertex shaders (`vs_10240819016C0ABB` and about 85 others) work out a light colour per vertex:
+
+```
+colour = (c[30 + index].xyz * attr2.y - attr2.xyz) * attr3.x + attr2.xyz     index = attr2.x * 255
+```
+
+- `attr2` is 8_8_8_8 with a baked torch colour in it (`FF2E7FD5` is orange), and `attr3.x` is 0. So the formula should come out as `attr2`, and the constant should not matter.
+- The red byte of that colour still selects a register. In the plaza the vertex buffer holds red values from 01 to FA, about 10 vertices each; the other 18,551 vertices are 0 and read c30, which is 0.
+- Registers from c92 up are not float data at the plaza: pointer-like words, and NaNs. c141 read `(NaN, -0, NaN)` in the log.
+- So a vertex whose red byte lands on c141 outputs NaN in red and blue. Lit, that writes 0 to those channels and leaves green as it was. One such vertex makes its whole triangle NaN after interpolation, which gives the hard edges.
+- Those registers hold whatever was set last, and the logs show them changing during play. That fits the colours changing with the form, though I did not log the registers across a form change.
+
+**Fix:** `banjo_renut_const_nan_flush` (on by default): a float constant with every exponent bit set reaches the shaders as 0. It is RePowered's rule, from `SwapConstantChunk` in its `constant_buffers.cpp`, whose comment gives the same reason (MIT, `THIRD_PARTY_NOTICES.md`). Ours is in `CopyAndSwapGroup`, which both the push path and the upload path use. The guest's bytes are kept unchanged for the next compare. This is not exactly the console's rule: a NaN multiplied by something that isn't 0 now gives 0 rather than NaN. RePowered accepts the same difference.
+
+**Cost:** about 12 more NEON instructions per 64-byte group pushed. The emulator's plaza pushes about 420 KB a frame, which is about 6,600 groups. I estimate well under 0.1 ms a frame on the A57; this has not been measured on the console.
+
+**Evidence, on the emulator only:** two runs with presses timed in game frames, turning the camera a full circle as Kameo and again as the creeper.
+
+| | Fix off (emu97off) | Fix on (emu98on) | Fix on again (emu99final) |
+|---|---|---|---|
+| Pixels the counter flagged, all captures | 55,269 | 6,528 | 26,331 |
+| What they are | Green and yellow polygons staying on the plaza, frame after frame | Short-lived small groups, mostly on the character and sky | One explosion (11,063 px), the amber sky, the creeper, lightning |
+
+The counter is a rough filter (`patch_strict.py`, scratch, not in the repo) and its fix-on totals are mostly false hits, so the totals alone prove little. What decides it is by eye: the side-by-side frames at 280 s, 301 s and 501 s show the same views with streaks with the fix off and none with it on, and the largest blobs of emu99final are not on the ground's polygons. emu98on and emu99final ran the same NRO.
+
+**How it was found:** `banjo_renut_diag_skip_scan_s` skips half the depth-tested draws at a time by one bit of a draw id, and the captures show which bits make a patch vanish. `banjo_renut_diag_skip_log_id` then logs those draws with their textures and constants, and `banjo_renut_diag_stream_dump_vs` now also counts the terrain's colour words. All three are off by default. `banjo_renut_diag_bake_log` and `banjo_renut_diag_draw_log_every_s` were added on the way. The bake log followed a wrong lead: the 64 to 256 texel targets are RePowered's imposters, not ground tiles.
+
+**Wrong theories I stated to the user on the way:** the shadow pass (rc18), and baked ground tiles.
+
+**Seen and not explained:** after a while in the level the emulator's light goes from day through amber to dark blue and back. The game's own constants do this (c11, c14 and c20 move smoothly in the log), so the colour change looks like the game's logic. The sky also shows hard colour bands during it, and I do not know whether the console shows those. It is the same with the fix on and off.

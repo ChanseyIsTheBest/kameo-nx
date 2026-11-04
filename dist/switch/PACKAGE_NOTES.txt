@@ -3,26 +3,20 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: a fix for the coloured patches on the ground, and two more rules matched to RePowered's renderer. Nothing else changed since rc17.
+New in this package: a real fix for the coloured patches on the ground. rc18's fix was wrong, as you found. Nothing else that affects the picture has changed since rc18.
 
-NOT RUN on your console, and the emulator has not shown the patches yet.
+Tested on the emulator only, NOT on your console yet. With your save, the patches appear with the fix off and are gone with it on, in the same views, as Kameo and as the creeper.
 
-The patches: a draw with no pixel shader uses the last one bound, a rule I added in rc11. RePowered also turns that off during the game's shadow pass, and I had missed that. The likely result is that the shadow volumes' stencil polygons got painted with whichever shader your character used last, so the colours changed with your form. Now they write no colour during that pass.
-
-Also matched to RePowered:
-- Normal maps: the two halves of each DXN block are now swapped on upload, because the 360 stores them the other way round from the Switch's GPU. This changes the lighting on normal-mapped surfaces, so it should look different. banjo_renut_dxn_swap = false turns it off.
-- The white disk over the video in the FMV orb is no longer drawn. This is RePowered's own workaround and neither of us knows the cause. banjo_renut_fmv_orb_skip = false turns it off. The scene has not been reached in testing.
-
-Compared and left as they are:
-- The resolve with no rectangle, because the update's own code disagrees with RePowered's reading.
-- Shadow filtering, higher resolutions and MSAA, because they change the picture or cost too much on the console.
+The cause: the Xbox 360's GPU treats anything times 0 as 0, even an invalid number (NaN). The Switch's GPU keeps the NaN. The ground's vertex shaders use a vertex colour's red value to pick a shader constant, then multiply it by 0, so it should do nothing. Many of those constants hold garbage, including NaNs. NaN in the red and blue channels writes as 0 there, which leaves only green. The garbage changes during play, which would explain why the colours followed your form. Now NaN and infinite constants reach the shaders as 0. RePowered does the same.
 
 What to check:
-1. Walk to where the patches were and change forms. They should be gone. Shadows should still look right, including the shadows on the ground.
-2. Fading models, such as an absorbed baby warrior: that is what the rc11 rule was for.
-3. Character and ground lighting, compared with hardware footage if you can.
+1. Select Kameo, press Play, walk to where the patches were, change to the creeper and back. They should be gone.
+2. Any other coloured or black specks you have noticed, such as the blue and pink dots from the audit. They might have the same cause. That is a guess, so tell me either way.
+3. Does the sky and light go amber and then dark blue after a while in Badlands, with hard bands in the sky? The emulator shows this. The light colours come from the game itself, but I can't tell whether the bands also appear on the console.
 
-If the patches or shadows look wrong, banjo_renut_last_pixel_shader = false turns off the rc11 rule altogether.
+banjo_renut_const_nan_flush = false in kameo.toml turns the fix off.
+
+Still waiting on a console result: rc18's normal map swap and FMV orb rule, and the portraits and goblins from rc12. banjo_renut_dxn_swap = false and banjo_renut_fmv_orb_skip = false turn off the two rc18 rules.
 
 From rc17: a fix for the 3 fps area in the big level. You confirmed it works.
 
