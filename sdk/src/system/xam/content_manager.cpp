@@ -64,8 +64,11 @@ REXCVAR_DEFINE_STRING(content_backup_root, "", "Kernel",
  * Packs of content type 2 are never written, so nothing needs them gone: on close they stop counting
  * as open, but their root and their files keep working. A save container still unmounts at once, as
  * it has to for its files to be in place.
+ *
+ * Off since rc16: it did not stop the bad-disc message, and the close it was for no longer happens at
+ * boot (kameo_dlc_no_rescan, renut_engine/dlc_install.cpp).
  */
-REXCVAR_DEFINE_BOOL(content_keep_closed_dlc, true, "Kernel",
+REXCVAR_DEFINE_BOOL(content_keep_closed_dlc, false, "Kernel",
                     "A closed DLC pack keeps its root and its open files until the game has moved on");
 // katamari-nx (2026-11-01): DLC kept from the game without uninstalling it (the user: Beautiful Katamari's packs that
 // only unlock what the game unlocks by itself take the fun out of unlocking it). The app's kameo_dlc_unlock_packs

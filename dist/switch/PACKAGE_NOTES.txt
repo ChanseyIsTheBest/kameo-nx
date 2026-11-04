@@ -3,14 +3,25 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: a diagnostic for the "problem with the disc" message you hit on rc14. It does not fix it. Everything else is as in rc14.
+New in this package: a fix for the "problem with the disc" message, and probably for the crash during the Microsoft logo.
 
-The cause is unknown. The message can come from four places in the game, and a failed file read was silent in our logs until now.
+The cause: at startup our kernel tells the game the sign-in changed. Kameo's DLC scan treats that as a reason to start over, so it closed its DLC packs and scanned again while DLC audio was still loading. Cues from a bank still loading got added twice, and the game calls that a bad disc. Now the game knows from the start that you are signed in, so the scan runs once and the packs stay mounted. Other ports don't hit this because their games don't restart a scan on that notice.
 
-What to do:
-1. Boot it as usual. If the disc message appears, send renut_001.log. The lines to look for are "[kameo] bad-disc message raised", "[NtReadFile] FAILED", "[io] read failed" and "[io] short read".
-2. To get past the message, set kameo_ignore_disc_error = true in kameo.toml. The message is then logged but not shown, and the game carries on with whatever failed, so sound or DLC content may be missing, and it may crash. It's for testing only.
-3. Also useful: boot with content_keep_closed_dlc = false and tell me whether the message still appears. That undoes rc14's DLC change.
+The disc message is explained by the game's code and by emulator boots. The crash link is likely but not proven.
+
+What to check:
+1. Boot it several times. The disc message and the logo crash were both intermittent, so one clean boot proves little.
+2. In renut_001.log there should now be four "XamContentCreate root 'dlc" lines, not eight, no "[save] close" lines for DLC, and no FAILED line for M_DLCsfx.xwb.
+3. DLC content and sounds, and whether boot is a little faster.
+4. Then what rc13 asked for, below: the big battle level, portraits and the goblin army.
+
+Keys, if it misbehaves:
+- kameo_dlc_no_rescan = false brings back the old double scan.
+- kameo_ignore_disc_error = true logs the disc message without showing it. For testing only: the game carries on with whatever failed.
+
+If the disc message still appears, send renut_001.log. The lines to look for are "[kameo] bad-disc message raised", "[NtReadFile] FAILED", "[io] read failed" and "[io] short read".
+
+rc14's change that kept closed DLC packs readable is now off, because it did not stop the message (content_keep_closed_dlc). Its fix to how finished operations are reported stays.
 
 From rc14: two boot fixes aimed at the crash during the Microsoft logo.
 

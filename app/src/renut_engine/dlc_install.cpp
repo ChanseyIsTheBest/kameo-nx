@@ -14,9 +14,12 @@
 
 #include <rex/cvar.h>
 #include <rex/filesystem.h>
+#include <rex/memory/utils.h>
 #include <rex/runtime.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/xam/content_manager.h>
+#include <rex/system/xam/user_profile.h>
+#include <rex/system/xmemory.h>
 
 
 #include "renut_engine/renut_logging.h"
@@ -24,6 +27,10 @@
 REXCVAR_DEFINE_STRING(renut_dlc_folder, "dlc", "Nuts&Bolts/DLC",
     "Folder of DLC packages (Xbox Live content files) reNut installs when the game starts, relative to "
     "reNut's folder.");
+REXCVAR_DEFINE_BOOL(kameo_dlc_no_rescan, true, "Kameo",
+    "The game knows from the start that the player is signed in, so the sign-in notice at startup does not make its "
+    "DLC scan start over (SeedSignInState). Off brings back closing and remounting the packs at boot")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 namespace renut::dlc {
 
 namespace {
@@ -204,6 +211,34 @@ void InstallPackages(rex::Runtime *runtime) {
     }
     if (newly || present)
         RNUT_INFO("DLC: {} package(s) installed now, {} already installed", newly, present);
+}
+
+/*
+ * Why Kameo closed and remounted its DLC packs at every boot, and what that broke.
+ *
+ * sub_820B0878 polls a notification listener that the DLC scan creates. A sign-in notice counts as a
+ * change only if its word (0x82BCFE94) says nobody was signed in, and the word starts at 0. Our kernel
+ * sends every title's first listener XN_SYS_SIGNINCHANGED at startup (KernelState::RegisterNotifyListener),
+ * so the notice always counted, during the scan. When the scan ended, sub_820B0D70 saw it and started
+ * over: close the packs, unload the DLC audio (sub_82315AF0), scan again.
+ *
+ * That unload only removes the cues of banks that have finished loading. Those from a bank still
+ * loading stay in the table, so the second scan adds them again, the insert in sub_82313330 fails, and
+ * the game calls that a bad disc. The file thread also still had requests for the closed packs: the
+ * failed open of dlc2:\audio\M_DLCsfx.xwb on every console boot, and possibly the damaged heap of the
+ * crash at the Microsoft logo. Other ports don't hit this: their games don't restart a scan on this notice.
+ *
+ * So the game is told at the start that the player is signed in, and the notice is no change. The packs
+ * then stay mounted from the first scan. Written before the guest starts.
+ */
+void SeedSignInState(rex::Runtime *runtime) {
+    if (!REXCVAR_GET(kameo_dlc_no_rescan))
+        return;
+    constexpr uint32_t kDlcListenerSignIn = 0x82BCFE94;
+    auto *kernel = runtime->kernel_state();
+    const uint32_t state = kernel->user_profile()->signin_state();
+    rex::memory::store_and_swap<uint32_t>(kernel->memory()->TranslateVirtual(kDlcListenerSignIn), state);
+    RNUT_INFO("DLC: sign-in state {} known from the start, so the scan does not restart (kameo_dlc_no_rescan)", state);
 }
 
 } // namespace renut::dlc
