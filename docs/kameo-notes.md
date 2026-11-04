@@ -608,7 +608,7 @@ the player's own files. What changes is the installer's gate: `release/manifest.
 pairs (`tools/make_release.py --edition`), each pointing at the same NRO, and the page says which edition it found. The
 runtime's patch check (`xex_module.cpp`, the base's signature digest against the patch's) is per pair, so the PAL disc needs the
 PAL update and the USA disc the USA one; a mixed pair the page refuses by hash. Region: `XGetGameRegion` answers 0xFFFF for
-both, as before. **Not yet run on a console with the PAL files.**
+both, as before. **Run on the console with the PAL files (2026-11-04, firmware 21.x, emuMMC):** the release NRO (v1.0.0) patches 0.0.0.5 to 0.0.2.5 at start, mounts both folders, and plays through the logos, the opening movie and gameplay; the console's French comes up as the language. An NRO built on Linux from this tree (below) does the same.
 
 **The code generator on Linux** (how the PAL image was made, Fedora 45 in a container with clang 23): `cmake --preset
 linux-amd64` in `sdk/` with `-DGIT_EXECUTABLE=/bin/false`, because `rex_version.cmake` reads this repository's `v1.0.0` tag as
@@ -616,3 +616,22 @@ the SDK's and stops at "floor version (0.10) is behind tag version (1.0)"; and F
 dispatcher, with `config_masseffect_wmv3.h` included after it), `libavutil/avconfig.h` and `libavutil/ffversion.h`, which are
 git-ignored and only on the Windows machine. `src/ui` needs `x11-xcb` and `wayland-client` even for the `rexglue` target. Then
 `REXGLUE_DUMP_IMAGE=out/renut_image.bin rexglue codegen renut_manifest.toml` in `app/`, 10.7 s.
+
+**The Switch build on Linux** (the same tree, the everyday build without PGO or LTO; `tools/switch_shaders.sh` is
+`switch_shaders.ps1` for bash, and `tools/deko3d_*.py` name `uam`, `spirv-cross` and `zstd` without `.exe` there). Three
+things the Windows recipe does not meet:
+
+- **devkitA64 r28 (libnx 4.9.0) makes an NRO that dies at boot** on firmware 21.x: a memory fault in `std::uncaught_exception`
+  on the SDK's `TimerQueue` thread, the first `condition_variable_any::wait`, because `__cxa_get_globals`'s pthread key read a
+  foreign value out of the thread's TLS slot. libnx 4.10 moved the user TLS slots ("thread: change USER_TLS_BEGIN to match
+  Nintendo reserved-space"; the 21.x TLS ABI marker). devkitPro's `devkitpro/devkita64` image (r29.2, libnx 4.12.0, the
+  `switch-zlib` and `switch-zstd` portlibs the SDK's link line names even without NVK) builds a working NRO; a host devkitPro
+  that cannot be updated cannot. plume's check still wants `REXGLUE_SWITCH_NVK_SDK/lib/libvulkan.a`: an empty archive does, as
+  nothing of NVK is linked on the deko3d path.
+- **The runtime shaders.** The game files and the executable give 4,616 shaders; the NRO's table has 139, three more than the
+  executable's 136: the Bink video's blit (`vs_2180EAECD26216DB`, `ps_9F19B02671FA1600`, `ps_0A24E04301CCDBB8`), which the game
+  assembles at run time. Without them the Xbox logo, the intro and every cutscene are black and run out their time, and the
+  console writes them to `shader_capture/` next to the NRO. They go into `out/renut_shader_dump` (and `app/out/pc/shader_capture`)
+  before the PC shader table and `switch_shaders.sh`.
+- `std::aligned_alloc` is not in devkitA64's `<cstdlib>` (newlib): `switch_audio_system.cpp` calls the C one. The host
+  `glslangValidator` (`BANJO_GLSLANG_VALIDATOR`) and the deko3d PC tools must be built on the same libc the build runs on.
