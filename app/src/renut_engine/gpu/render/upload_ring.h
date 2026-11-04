@@ -45,6 +45,8 @@ public:
   // for the two rings, the heap at 2.9 of 3.08 GB in the d4 city); a city frame fills a few MB with the constants
   // pushed. A frame that needs more adds a chunk, which the trim below gives back.
   static constexpr uint64_t kChunkSize = 16ull << 20;
+  // kameo-nx (2026-11-04, banjo_renut_split_frame_mb): the chunk this frame is writing, so how far it has got.
+  size_t CurrentChunk() const { return current_; }
   // Resets (frames of this slot) after which chunks beyond what those frames
   // used are released.
   static constexpr uint32_t kTrimResets = 300;

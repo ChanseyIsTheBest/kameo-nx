@@ -306,6 +306,12 @@ REXCVAR_DEFINE_BOOL(banjo_renut_host_packets, false, "Banjo/Enhancements",
                     "device state (a key the recording threads make as they record); a later draw of the same state "
                     "takes it instead of deriving it again. Exact: the same state, and every epoch the answers depend on")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): SplitLongFrameLocked.
+REXCVAR_DEFINE_INT32(banjo_renut_split_frame_mb, 192, "Banjo/Enhancements",
+                     "A frame that has written this much of its upload ring is split: what it drew so far finishes on the "
+                     "GPU and the next ring slot takes over, nothing presented. The same picture. 0: off, and a big "
+                     "level's first frames can run the console out of memory")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-04): ResolveStateLocked.
 REXCVAR_DEFINE_BOOL(banjo_renut_resolve_clears_both, true, "Banjo/Enhancements",
                     "A resolve's clear flags clear both surfaces they name, as on the console: imposters and portraits "
@@ -9790,7 +9796,34 @@ void FastCensusDraw(const DrawCall &call, const ShaderRecord &vs, const ShaderRe
     c.ps_groups += uint64_t(std::popcount(*replay->ps_dirty));
 }
 
+// kameo-nx (2026-11-04, the user's console run: a crash loading the big battle level 004CFC24, out of memory in seconds).
+// The ring is only recycled when its frame ends, and a level's first frames can draw many thousands of models at 2-4 KB
+// of bone constants each, in one frame: 16 MB every 20 ms, past 1.4 GB. So a long frame is ended on the GPU here, as a
+// frame with nowhere to present ends (SubmitAndAdvance): the wait for the next slot holds this thread back while the GPU
+// catches up, and that slot's ring is free. Commands still run in order, on the same targets. What the fast path kept
+// from the draw before can name the ring, so it starts again; the bound state goes with the list's generation.
+uint64_t g_frame_splits = 0;
+[[gnu::cold, gnu::noinline]] void SplitLongFrameLocked() {
+  auto &s = State();
+  if (!s.list_open)
+    return;
+  detail::SubmitAndAdvance(s, nullptr, nullptr);
+  if (!Video::EnsureCommandListLocked())
+    return;
+  SyncBound(s);
+  InvalidateFastDrawLocked();
+  ++g_frame_splits;
+  if (g_frame_splits <= 4 || g_frame_splits % 256 == 0)
+    RGPU_INFO("[kameo] long frame split (banjo_renut_split_frame_mb): {} so far", g_frame_splits);
+}
+
 bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayConstants *replay) {
+  static const size_t split_chunks = [] {
+    const int mb = REXCVAR_GET(banjo_renut_split_frame_mb);
+    return mb > 0 && IsDeko3D() ? std::max<size_t>(size_t(mb) / 16, 1) : ~size_t(0);
+  }();
+  if (Video::UploadsLocked().CurrentChunk() >= split_chunks) [[unlikely]]
+    SplitLongFrameLocked();
   // banjo-nx (2026-10-26, the record-time draw path): the lean executor first; 0: this draw is DrawStateLocked's.
   if (const int fast = FastDrawLocked(device_state, call, replay))
     return fast > 0;

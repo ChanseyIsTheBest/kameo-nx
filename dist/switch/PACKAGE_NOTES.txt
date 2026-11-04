@@ -3,7 +3,18 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: the fix for the broken portraits and the exploded far-away goblins. Nothing else changed since rc11.
+New in this package: the fix for the crash loading the big battle level. Nothing else changed since rc12.
+
+The cause: that level's first frames draw so many models, each with its own bone data, that our upload memory grew past 1.4 GB inside one frame and the console ran out. Now a frame past 192 MB is split: what it has drawn finishes on the GPU and the memory is reused, with nothing shown on screen. It should not change the picture.
+
+What to check:
+1. Load the level. It should no longer crash. Your log should show "[kameo] long frame split" and few or no "Upload ring" failures.
+2. Then the portraits and the goblin army: the fix for those is in rc12 and still has no result, because the crash came first.
+3. How long the level takes to load, and any long pause: a split waits for the GPU. Not measured.
+
+If it misbehaves, banjo_renut_split_frame_mb = 0 in kameo.toml turns the split off, and banjo_renut_resolve_clears_both = false the portrait fix.
+
+From rc12: New in this package: the fix for the broken portraits and the exploded far-away goblins. Nothing else changed since rc11.
 
 NOT RUN. It compiles. It comes from reading the game's code and our trace, so your console run is its first test.
 
