@@ -556,3 +556,23 @@ The values the user chose that change behaviour: dynamic resolution on, `frame_c
 **Console memory (the user's logs to 13:57):** at most 1,348 MB taken from a 3,094 MB heap plus a 634 MB GPU region, leaving 1,112 MB never handed out. The older 3 fps run left 913 MB.
 
 **The NRO:** version 1.0.0, author ChanseyIsTheBest, the user's icon (`tools/switch/icon/kameo_icon.jpg`, 256x256, from their `icon.webp`), tracked as the other ports track theirs, at the user's word.
+
+## The final build: PGO + LTO (2026-11-04, the user's word)
+
+The user asked for it after rc20, and said when the profile was enough. Instrumented build `app/out/switch-pgo-gen/renut.nro`, 97.95 MB. Profile collected on the emulator, merged by `tools/pgo_merge.py` into `pgo/`: 232 `.gcda` files, 4.1 MB, counts only, tracked on purpose so the final build can be repeated.
+
+Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_LTO=ON -DBANJO_RENUT_RELEASE_SHADERS=ON`. 58,664,956 bytes, md5 `2ca4baf0249e9a17e1a2720bb304b766`, text 55.85 MB, 0 veneers, so well under the 128 MB limit. It's the distribution build: the table and GLSL of 139 shaders only, the rest from the installer.
+
+**The profile came from the emulator, not the console.** It says which code runs often, which should carry over, but nothing here measures the gain on the A57. No console profile of this build exists yet.
+
+**A hang seen once.** The first emulator run of this NRO stayed on the Badlands loading screen for about 5 minutes, at 60 fps with no crash. The same NRO then loaded on the user's console, and a 10-minute retry on the emulator loaded with the full world at about 25 fps and 0 shader compiles. The machine was under load at the time, which the user suspected. Cause not proven.
+
+## The web installer (2026-11-04, the user's request)
+
+`kameo-nx-installer`, Banjo's design: a GitHub Pages site that makes `kameo-nx.zip` in the browser from the player's files. Nothing is uploaded. The NRO comes from `release/`, and is also on the game repository's release page.
+
+- **What the user decided:** the NRO, with its icon, is published on the release page and given by the installer, as the other ports do. This overrides the first message's rule against distributing game data for that one file: it holds the recompiled code and the 139 shaders' GLSL. Game files, generated code, test outputs, shader outputs and the console caches stay out of both repositories.
+- **Shaders:** the page finds 4,477 containers on the disc and 5,722 with the DLC. With the NRO's 139 that makes the native table's 5,861, and all 5,722 table numbers match the native ones.
+- **Different DXC:** the page uses DXC v2025.1 and the native chain 1.8.2407, so about a third of the GLSL differs in its temporaries (3,922 of 5,722 identical). All 5,576 compiled variants whose text is the native text are byte for byte the native cache's. A variant with different text is not compared at all, because the cache's key is the text.
+- **Two DLC shaders:** `ps_31E80B337E6737C3` and `ps_D8285199D6D8B325`, in a model in pack C9352F19, stopped SPIRV-Cross at "Maximum compilation loops detected" with the newer DXC's SPIR-V. Any failed shader aborts an install, so every DLC install failed. `lib/chain.js` now retries a rejected shader with `--force-recompile-max-debug-iterations 16` (8 and 64 give the same text). `--force-temporary` also gets through SPIRV-Cross, but `deko3d_glsl.py` refuses its samplers in temporaries. Both shaders now compile to 5,376 bytes, the same size as the native GLSL's, with different bytes and the same counts of texture reads, discards and branches. **Neither has been seen on screen.**
+- **Who compiles:** Banjo's later option. "The Switch, as you play" leaves out `deko3d_shaders.bin` and `pipeline_list.bin`, because with that list and no cache the prebuild workers would compile every shader in it.

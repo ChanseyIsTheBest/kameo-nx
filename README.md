@@ -4,6 +4,22 @@ A native Nintendo Switch port of the Xbox 360 version of **Kameo: Elements of Po
 the ReXGlue static recompiler. The PC build is its intermediary step. You need your own copy of the game: nothing of the game
 is in this repository.
 
+> [!NOTE]
+> You need your own copy of the Xbox 360 disc (NTSC-U) and title update 2. The DLC packs are optional.
+
+## How to install
+
+1. Open the installer page: **https://chanseyisthebest.github.io/kameo-nx-installer/**
+2. Choose your game (the disc image or an extracted folder), then title update 2's package and any DLC packs, and press
+   **Create kameo-nx.zip**. Everything runs in your browser and your game files stay on your computer.
+3. Extract `kameo-nx.zip` to the root of your SD card. It makes `switch/kameo-nx/`.
+4. In **Sphaira**, find Kameo: Elements of Power, press **X**, choose **Install Forwarder**, set **Address Space** to **39-bit**,
+   choose **Create Forwarder**, and start the game from the Home Screen. From the second start on it runs on four CPU cores.
+
+Settings are in `switch/kameo-nx/kameo.toml`. To build everything yourself, see [docs/building.md](docs/building.md).
+
+## Development
+
 Status, findings and decisions: [docs/kameo-notes.md](docs/kameo-notes.md). Progress log: [docs/progress-log.md](docs/progress-log.md).
 What goes on the SD card: [dist/switch/README.txt](dist/switch/README.txt).
 
@@ -39,4 +55,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/switch_shaders.ps1
 tools\build_switch.bat
 ```
 
-Game data is never committed, uploaded or distributed.
+The game's files are never committed or uploaded. The release's NRO holds the recompiled program, its icon and the 139 shaders
+that no level or model file holds, and none of the game's levels, models, textures, sound or video.

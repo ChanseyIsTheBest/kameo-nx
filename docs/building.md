@@ -61,6 +61,21 @@ PGO and LTO come last, on the user's word, in folders of their own (`BUILD_DIR` 
 3. **Optimised:** `-DBANJO_PGO=use -DBANJO_SWITCH_LTO=ON -DBANJO_RENUT_RELEASE_SHADERS=ON`. A function changed since the
    instrumented build keeps no profile.
 
+`BANJO_RENUT_RELEASE_SHADERS` is the distribution build: the NRO carries the table and GLSL of only the 139 shaders that no
+`.lvl` or `.mdl` holds, and the rest comes from the player's game files through the installer. Make its files first:
+
+```bash
+python tools/renut_switch_shader_cache.py --pc app/out/pc --only out/kameo_runtime_shaders --out-dir app/out/renut_switch_release
+python tools/deko3d_shader_package.py --only out/kameo_runtime_shaders --raw --glsl out/deko3d_shaders/glsl_opt --out app/out/renut_switch_release
+```
+
+This NRO needs a version 2 `deko3d_glsl.bin` beside it, which the installer writes. A version 1 package beside it gives no
+shader table, and the world doesn't draw.
+
+The installer is its own repository, [kameo-nx-installer](https://github.com/ChanseyIsTheBest/kameo-nx-installer). Its
+`tools/make_release.py` copies this NRO into `release/`, and `release/variants.txt` comes from
+`python tools/deko3d_variant_cache.py --generic --list <pipeline_list.bin> --dry-run --export-variants <file>`.
+
 Keep the temporary folder's path free of spaces (GCC's parallel LTO link writes a makefile with it unquoted), and never
 run two of these builds at once: they share the SDK's archives in `sdk/out/switch-arm64`.
 
