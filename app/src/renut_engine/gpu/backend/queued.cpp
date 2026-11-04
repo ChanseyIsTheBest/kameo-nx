@@ -499,6 +499,13 @@ void QueueCapture(DrawCapture *capture) {
   });
 }
 
+// kameo-nx (2026-11-04): GeneratingShadowMap in the update: preShadowRender (8226FC90) sets this byte and postShadowRender
+// (8226FF60) clears it, and nothing else writes it. RePowered reads the same flag (0x82B70B8F in the original game).
+bool GuestShadowPass() {
+  const auto *flag = GuestPtr<const u8>(0x82BCE10Du);
+  return flag && *flag != 0;
+}
+
 DrawCapture *Capture(u32 device_va, const DrawCall &call) {
   auto *device = GuestPtr<d3d::Device>(device_va);
   if (!device)
@@ -513,6 +520,7 @@ DrawCapture *Capture(u32 device_va, const DrawCall &call) {
   capture->call = call;
   capture->call.up_vertices = nullptr;
   capture->call.up_indices = nullptr;
+  capture->call.shadow_pass = GuestShadowPass();
   return capture;
 }
 
@@ -527,6 +535,7 @@ DrawCapture *CaptureDelta(u32 device_va, const DrawCall &call) {
   capture->call = call;
   capture->call.up_vertices = nullptr;
   capture->call.up_indices = nullptr;
+  capture->call.shadow_pass = GuestShadowPass();
   const auto *bytes = reinterpret_cast<const u8 *>(device);
   if (c.device.load(std::memory_order_relaxed) != device) {
     // The chain's first draw (or a frame's): the whole device, which the render thread takes as its own.

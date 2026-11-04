@@ -26,6 +26,14 @@
 #include "renut_engine/gpu/render/draw.h"
 #include "renut_engine/gpu/render/graphics_options.h"
 #include "renut_engine/gpu/backend/video.h"
+#include <rex/cvar.h>
+
+// kameo-nx (2026-11-04): ReadLevel.
+REXCVAR_DEFINE_BOOL(banjo_renut_dxn_swap, true, "Banjo/Enhancements",
+                    "Swap the two BC4 halves of each DXN block on upload, as RePowered does: Xenos orders them the other "
+                    "way round from BC5, which transposes X and Y of every normal map. Changes the lighting on normal-mapped "
+                    "surfaces. Off keeps them as they are")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 
 namespace renut::gpu {
 
@@ -364,6 +372,10 @@ void ReadLevel(const TextureFormatInfo &info, const TextureFetch &fetch, const L
   const u32 endian = fetch.Endian();
   const bool is_3d = fetch.Dimension() == TextureDimension::Tex3D;
   const uint32_t run = is_3d ? 1 : TiledRunBlocks(bpb_log2);
+  // kameo-nx (2026-11-04, from Kameo: RePowered's texture_upload.cpp: MIT, THIRD_PARTY_NOTICES.md): Xenos DXN orders the two
+  // BC4 halves of each block the other way round from BC5, which transposes X and Y of every normal map.
+  static const bool dxn_swap_on = REXCVAR_GET(banjo_renut_dxn_swap);
+  const bool dxn_swap = dxn_swap_on && fetch.Format() == GpuTextureFormat::FmtDXN && gbpb == 16;
 
   std::vector<uint8_t> row(size_t(blocks_w) * gbpb);
   for (uint32_t z = 0; z < depth; ++z) {
@@ -386,6 +398,15 @@ void ReadLevel(const TextureFormatInfo &info, const TextureFetch &fetch, const L
         std::memcpy(row.data(), src.base + offset, row.size());
       }
       SwapEndian(endian, row.data(), row.data(), row.size());
+      if (dxn_swap) [[unlikely]] {
+        for (size_t b = 0; b < size_t(blocks_w) * 16; b += 16) {
+          uint64_t first, second;
+          std::memcpy(&first, row.data() + b, 8);
+          std::memcpy(&second, row.data() + b + 8, 8);
+          std::memcpy(row.data() + b, &second, 8);
+          std::memcpy(row.data() + b + 8, &first, 8);
+        }
+      }
       uint8_t *out = dst + size_t(z) * dst_slice_pitch + size_t(y) * dst_row_pitch;
       if (info.conversion == TexelConversion::Copy)
         std::memcpy(out, row.data(), size_t(blocks_w) * hbpb);

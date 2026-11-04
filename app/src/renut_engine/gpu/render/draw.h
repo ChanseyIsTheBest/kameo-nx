@@ -59,6 +59,10 @@ struct DrawCall {
   u32 up_vertex_count = 0;
   const u8 *up_indices = nullptr;
   bool up_indices_32 = false;
+
+  // kameo-nx (2026-11-04): the game's GeneratingShadowMap flag at the draw call (backend/queued.cpp): see
+  // LastPixelShaderApplies. Read on the game's thread, because it means nothing by the time the render thread gets here.
+  bool shadow_pass = false;
 };
 
 // Reads the guest vertex buffers (and vertex fetch buffers) the draws recorded

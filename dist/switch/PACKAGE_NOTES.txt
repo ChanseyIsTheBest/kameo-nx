@@ -3,9 +3,28 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: a fix for the 3 fps area in the big level. Nothing else changed since rc16.
+New in this package: a fix for the coloured patches on the ground, and two more rules matched to RePowered's renderer. Nothing else changed since rc17.
 
-NOT RUN on your console. Raising the cache limit to 768 MB did not help, and this fix is aimed at why.
+NOT RUN on your console, and the emulator has not shown the patches yet.
+
+The patches: a draw with no pixel shader uses the last one bound, a rule I added in rc11. RePowered also turns that off during the game's shadow pass, and I had missed that. The likely result is that the shadow volumes' stencil polygons got painted with whichever shader your character used last, so the colours changed with your form. Now they write no colour during that pass.
+
+Also matched to RePowered:
+- Normal maps: the two halves of each DXN block are now swapped on upload, because the 360 stores them the other way round from the Switch's GPU. This changes the lighting on normal-mapped surfaces, so it should look different. banjo_renut_dxn_swap = false turns it off.
+- The white disk over the video in the FMV orb is no longer drawn. This is RePowered's own workaround and neither of us knows the cause. banjo_renut_fmv_orb_skip = false turns it off. The scene has not been reached in testing.
+
+Compared and left as they are:
+- The resolve with no rectangle, because the update's own code disagrees with RePowered's reading.
+- Shadow filtering, higher resolutions and MSAA, because they change the picture or cost too much on the console.
+
+What to check:
+1. Walk to where the patches were and change forms. They should be gone. Shadows should still look right, including the shadows on the ground.
+2. Fading models, such as an absorbed baby warrior: that is what the rc11 rule was for.
+3. Character and ground lighting, compared with hardware footage if you can.
+
+If the patches or shadows look wrong, banjo_renut_last_pixel_shader = false turns off the rc11 rule altogether.
+
+From rc17: a fix for the 3 fps area in the big level. You confirmed it works.
 
 The cause: draws get partial copies of their vertex data first. Those filled the vertex cache, and then the compact whole-buffer copies that would replace them were refused. The partial copies stayed in use, so nothing ever freed up, and the CPU reconverted about 600 MB of vertices every frame. Now whole-buffer copies may go 256 MB over the limit, and the partial copies they replace are dropped. It should not change the picture.
 

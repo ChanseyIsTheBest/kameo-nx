@@ -312,6 +312,11 @@ REXCVAR_DEFINE_INT32(banjo_renut_split_frame_mb, 192, "Banjo/Enhancements",
                      "GPU and the next ring slot takes over, nothing presented. The same picture. 0: off, and a big "
                      "level's first frames can run the console out of memory")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): kFmvOrbDiskPixelShader.
+REXCVAR_DEFINE_BOOL(banjo_renut_fmv_orb_skip, true, "Banjo/Enhancements",
+                    "RePowered's workaround: the white disk that hides the video in the FMV orb is not drawn (one draw of "
+                    "pixel shader 3547764B6B934FEE, 192 indices). Off draws it")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 // kameo-nx (2026-11-04): WholeCopyFits.
 REXCVAR_DEFINE_INT32(banjo_renut_whole_over_cap_mb, 256, "Banjo/Enhancements",
                      "A whole-buffer copy may take the stream cache this far past banjo_renut_stream_cache_mb, so that "
@@ -8358,11 +8363,24 @@ bool FastExportReads(const GuestDevice &device, const DrawCall &call, const Shad
 // With no pixel shader bound the GPU keeps colouring with the last one loaded, unless the EDRAM is in depth-only mode
 // (5): fading models such as an absorbed baby warrior draw this way. A null shader is depth-only with no colour target
 // and for an occlusion query's test quad. By its address: a record can go when the game frees its shader.
+// Also not in the game's shadow pass, as RePowered has it: leaving that out painted the stencil polygons of the shadow
+// volumes in the last shader's colours, patches on the ground that changed with the player's form (console, rc17).
 u32 g_last_pixel_shader_va = 0;
-bool LastPixelShaderApplies(const GuestDevice &device) {
+bool g_fast_shadow_pass = false;  // the last draw's, for FastDrawLocked: the answer changes with no word of the device
+bool LastPixelShaderApplies(const GuestDevice &device, const DrawCall &call) {
   static const bool on = REXCVAR_GET(banjo_renut_last_pixel_shader);
-  return on && g_last_pixel_shader_va && device.U32(d3d::kDeviceOffsetRenderTargets) != 0 &&
+  return on && g_last_pixel_shader_va && !call.shadow_pass && device.U32(d3d::kDeviceOffsetRenderTargets) != 0 &&
          (u32(device.dev().m_ControlPacket.EdramModeControl) & 7) != 5 && !OcclusionQueryOpenLocked();
+}
+// kameo-nx (2026-11-04, from Kameo: RePowered's scene_replay.cpp: MIT, THIRD_PARTY_NOTICES.md): the white disk over the FMV
+// orb hides the video, though the console shows the video through it and the game issues the draw the same. RePowered
+// has no cause for it either, and skips this one draw of this one shader.
+constexpr uint64_t kFmvOrbDiskPixelShader = 0x3547764B6B934FEEull;
+constexpr u32 kFmvOrbDiskIndices = 192;
+bool g_fmv_orb_shader_bound = false;
+bool FmvOrbSkipOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_fmv_orb_skip);
+  return on;
 }
 
 // kameo-nx (2026-11-04, the same audit): PA_SU_POLY_OFFSET_FRONT, in the device's private words. The offset is in
@@ -8411,6 +8429,10 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
     return 0;
   if (!f.valid)
     return FastMiss(kFastNoState);
+  if (call.shadow_pass != g_fast_shadow_pass) [[unlikely]] {  // kameo-nx (2026-11-04): LastPixelShaderApplies
+    g_fast_shadow_pass = call.shadow_pass;
+    return FastMiss(kFastShaders);
+  }
   const ChainHint &chain = g_chain_hint;
   if (!chain.seq || chain.seq != f.seq + 1)
     return FastMiss(kFastBreak);
@@ -8499,9 +8521,12 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
   if (shaders_changed) {  // kameo-nx (2026-11-04): LastPixelShaderApplies. The full path makes that draw's state.
     if (const u32 ps_va = device.U32(d3d::kDeviceOffsetPixelShader))
       g_last_pixel_shader_va = ps_va;
-    else if (LastPixelShaderApplies(device))
+    else if (LastPixelShaderApplies(device, call))
       return FastMiss(kFastShaders);
+    g_fmv_orb_shader_bound = device_ps && device_ps->hash == kFmvOrbDiskPixelShader;
   }
+  if (g_fmv_orb_shader_bound && call.count == kFmvOrbDiskIndices) [[unlikely]]
+    return FastMiss(kFastShaders);  // kameo-nx (2026-11-04): DrawStateLocked decides
   // The declaration as DrawStateLocked finds it: the device's, else the one D3DVertexShader_Bind bound to the shader,
   // else the shader's own fetches', else none; again when the shaders or the device's word changed.
   const u32 *shader_strides = f.shader_strides;  // null for a device declaration
@@ -9857,8 +9882,14 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   // kameo-nx (2026-11-04): LastPixelShaderApplies.
   if (const u32 ps_va = device.U32(d3d::kDeviceOffsetPixelShader))
     g_last_pixel_shader_va = ps_va;
-  else if (LastPixelShaderApplies(device))
+  else if (LastPixelShaderApplies(device, call))
     ps = FindShaderLocked(g_last_pixel_shader_va, RecordKind::PixelShader);
+  g_fast_shadow_pass = call.shadow_pass;
+  g_fmv_orb_shader_bound = ps && ps->hash == kFmvOrbDiskPixelShader;
+  if (g_fmv_orb_shader_bound && call.count == kFmvOrbDiskIndices && FmvOrbSkipOn()) [[unlikely]] {
+    InvalidateFastDrawLocked();  // the next draw's state is found whole: this one's words were not taken in
+    return false;
+  }
   // Without a declaration set, the shader fetches as D3DVertexShader_Bind
   // bound it, or else as its own vfetches describe (bundle meshes).
   const VertexDeclarationRecord *declaration = nullptr;
