@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam.exe')
+UAM = os.path.join(ROOT, 'out', 'deko3d_tools', 'uam-build', 'uam.exe' if os.name == 'nt' else 'uam')
 
 
 def build(source, out_dir, pairs, name=None):

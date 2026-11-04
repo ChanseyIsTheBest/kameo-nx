@@ -31,7 +31,7 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ZSTD = r'C:\devkitPro\msys2\usr\bin\zstd.exe'
+ZSTD = r'C:\devkitPro\msys2\usr\bin\zstd.exe' if os.name == 'nt' else (shutil.which('zstd') or 'zstd')
 
 
 def fwd(p):
