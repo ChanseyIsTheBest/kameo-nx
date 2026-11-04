@@ -5,7 +5,7 @@ Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's.
 
 New in this package: the fix for the crash loading the big battle level. Nothing else changed since rc12.
 
-The cause: that level's first frames draw so many models, each with its own bone data, that our upload memory grew past 1.4 GB inside one frame and the console ran out. Now a frame past 192 MB is split: what it has drawn finishes on the GPU and the memory is reused, with nothing shown on screen. It should not change the picture.
+The cause: that level's first frames send so much data per draw that our upload memory grew past 1.4 GB inside one frame and the console ran out. Now a frame past 192 MB is split: what it has drawn finishes on the GPU and the memory is reused, with nothing shown on screen. It should not change the picture.
 
 What to check:
 1. Load the level. It should no longer crash. Your log should show "[kameo] long frame split" and few or no "Upload ring" failures.
