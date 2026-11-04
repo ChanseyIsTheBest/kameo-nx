@@ -826,6 +826,14 @@ namespace {
 
 constexpr size_t kChaseLines = 2048;
 
+/*
+ * Which line of a page the i-th page uses. It has to look random: physically contiguous memory (which blocks need) indexes
+ * the 2 MB, 16-way L2 by address bits 6 to 16, and the first version's (i % 64) made bits 12 to 16 follow from bits 6 to 11.
+ * That put 2048 lines in 64 sets, 32 to a set: every load missed the L2, and the test measured RAM instead of the TLB
+ * (+112 to +153 ns on the console, in all but the ret test and a view of 1024 lines).
+ */
+size_t LineOfPage(size_t i) { return static_cast<size_t>((u64(i + 1) * 0x9E3779B97F4A7C15ull) >> 58); }
+
 /* ns per load, the best of 8 passes after a warm-up. Each load's address depends on the last load, so they can't overlap. */
 double ChaseNs(const uintptr_t* addrs, size_t n) {
     u64 best = ~u64(0);
@@ -882,7 +890,7 @@ void CodeAddresses(u64 va, u64 size, bool rets, std::vector<uintptr_t>& scattere
     constexpr u32 kRet = 0xD65F03C0;
     for (size_t i = 0; i < kChaseLines && i * stride < pages; i++) {
         const u64 page = va + i * stride * kPageSize;
-        const u64 line = page + (i % 64) * 64;
+        const u64 line = page + LineOfPage(i) * 64;
         if (!rets) {
             scattered.push_back(line);
             continue;
@@ -950,7 +958,7 @@ extern "C" void RexGmLatencyTest(void (*emit)(const char*)) {
                 for (size_t off = 0; off + kPageSize <= hi - lo && scattered.size() < kChaseLines; off += kPageSize) {
                     if (s.protection.count(win + off)) continue;
                     const uintptr_t page = reinterpret_cast<uintptr_t>(s.base) + win + off;
-                    scattered.push_back(page + (scattered.size() % 64) * 64);
+                    scattered.push_back(page + LineOfPage(scattered.size()) * 64);
                     for (size_t l = 0; l < 64 && grouped.size() < kChaseLines; l++) grouped.push_back(page + l * 64);
                 }
             }

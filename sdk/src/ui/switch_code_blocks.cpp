@@ -208,18 +208,24 @@ bool TurnedOffInToml() {
   return off;
 }
 
-/* No loader: the swap on two pages of its own, the good path and both refusals. Which step failed, or 0. */
-int SelfTest(Handle proc) {
+/*
+ * No loader: the swap on two pages of its own, the good path and both refusals. The kernel's answer and what the page
+ * then runs, for each. Goes on after a surprise, so that a wrong answer in one doesn't hide the others.
+ */
+void SelfTest(Handle proc) {
   static const u32 kReturns1[] = {0x52800020, 0xd65f03c0};  // mov w0, #1; ret
   static const u32 kReturns2[] = {0x52800040, 0xd65f03c0};  // mov w0, #2; ret
   CodePage stub, code;
-  if (!MapCodePage(proc, kStub, sizeof(kStub), &stub)) return 1;
-  if (!MapCodePage(proc, kReturns1, sizeof(kReturns1), &code)) return 2;
+  const auto say = [](const char* what) {
+    snprintf(g_status, sizeof(g_status), "[code blocks] no loader (an emulator), left where it is; swap self-test: %s", what);
+  };
+  if (!MapCodePage(proc, kStub, sizeof(kStub), &stub)) return say("FAILED, no page for the swap");
+  if (!MapCodePage(proc, kReturns1, sizeof(kReturns1), &code)) return say("FAILED, no page to swap");
   const auto swap = reinterpret_cast<u32 (*)(Args*)>(stub.va);
   const auto run = reinterpret_cast<int (*)()>(code.va);
-  if (run() != 1) return 3;
+  if (run() != 1) return say("FAILED, the first page does not run");
   void* second = memalign(kPage, kPage);
-  if (!second) return 4;
+  if (!second) return say("FAILED, no second page");
   memset(second, 0, kPage);
   memcpy(second, kReturns2, sizeof(kReturns2));
   armDCacheFlush(second, kPage);
@@ -228,22 +234,24 @@ int SelfTest(Handle proc) {
   a.count = 1;
   a.seg[0] = {reinterpret_cast<u64>(code.va), reinterpret_cast<u64>(code.heap), reinterpret_cast<u64>(second), kPage,
               Perm_Rx};
-  if (swap(&a) != 0) return 5;
-  if (run() != 2) return 6;
-  // The wrong old copy: refused, and nothing changes.
-  a.seg[0].new_src = reinterpret_cast<u64>(code.heap);
-  if (swap(&a) == 0) return 7;
-  if (run() != 2) return 8;
-  // The right old copy and a new copy that can't be mapped: the old one goes back.
+  // The normal path, expected 0 and 2.
+  const u32 good = swap(&a);
+  const int after_good = run();
+  // A new copy that can't be mapped, expected a refusal and 2: the old one goes back.
   a.seg[0].old_src = reinterpret_cast<u64>(second);
   a.seg[0].new_src = reinterpret_cast<u64>(stub.va);
-  if (swap(&a) == 0) return 9;
-  if (run() != 2) return 10;
-  svcUnmapProcessCodeMemory(proc, reinterpret_cast<u64>(code.va), reinterpret_cast<u64>(second), kPage);
-  free(second);
-  free(code.heap);
-  UnmapCodePage(proc, stub);
-  return 0;
+  const u32 refused_new = swap(&a);
+  const int after_new = run();
+  // The wrong old copy, expected a refusal and 2: nothing changes.
+  a.seg[0].old_src = reinterpret_cast<u64>(code.heap);
+  a.seg[0].new_src = reinterpret_cast<u64>(code.heap);
+  const u32 refused_old = swap(&a);
+  const int after_old = run();
+  char what[120];
+  snprintf(what, sizeof(what), "good 0x%X runs %d; bad new copy 0x%X runs %d; bad old copy 0x%X runs %d", good, after_good,
+           refused_new, after_new, refused_old, after_old);
+  say(what);
+  /* What is mapped now depends on those answers: only an emulator gets here, and the pages stay. */
 }
 
 void Apply(Handle proc) {
@@ -308,9 +316,7 @@ void Apply(Handle proc) {
 __attribute__((constructor(101))) void RexCodeBlocksInit() {
   const Handle proc = envGetOwnProcessHandle();
   if (proc == INVALID_HANDLE) {
-    const int failed = SelfTest(CUR_PROCESS_HANDLE);
-    snprintf(g_status, sizeof(g_status), "[code blocks] no loader (an emulator), left where it is; swap self-test: %s %d",
-             failed ? "FAILED at step" : "passed,", failed);
+    SelfTest(CUR_PROCESS_HANDLE);
     return;
   }
   if (TurnedOffInToml()) {
