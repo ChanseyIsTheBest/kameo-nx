@@ -69,8 +69,9 @@ set(RENUT_DXC_BIN_DIR "${RENUT_XENOS_RECOMP_DIR}/thirdparty/dxc-bin/bin/x64")
 if(CMAKE_HOST_WIN32)
     set(RENUT_DXC "${RENUT_DXC_BIN_DIR}/dxc.exe")
 else()
-    # The Linux binary finds libdxcompiler next to it.
-    set(RENUT_DXC env "LD_LIBRARY_PATH=${RENUT_XENOS_RECOMP_DIR}/thirdparty/dxc-bin/lib/x64" "${RENUT_DXC_BIN_DIR}/dxc-linux")
+    # The Linux binary finds libdxcompiler through the environment (one path, so the tools can take it too).
+    set(RENUT_DXC "${RENUT_DXC_BIN_DIR}/dxc-linux")
+    set(RENUT_DXC_ENV "LD_LIBRARY_PATH=${RENUT_XENOS_RECOMP_DIR}/thirdparty/dxc-bin/lib/x64")
 endif()
 
 # renut_host_shader(<target> <stem> <profile>) compiles gpu/shaders/host/<stem>.hlsl
@@ -98,7 +99,7 @@ function(renut_host_shader TARGET STEM PROFILE)
         add_custom_command(
             OUTPUT "${out}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${RENUT_GPU_GEN_DIR}/host_shaders"
-            COMMAND ${RENUT_DXC} -T ${PROFILE} -E main -HV 2021 -all-resources-bound
+            COMMAND ${CMAKE_COMMAND} -E env ${RENUT_DXC_ENV} "${RENUT_DXC}" -T ${PROFILE} -E main -HV 2021 -all-resources-bound
                     -Wno-ignored-attributes ${format_args}
                     -Fh "${out}" -Vn g_${STEM}_${fmt} "${src}"
             DEPENDS "${src}" ${host_includes}
@@ -115,7 +116,7 @@ function(renut_host_shader TARGET STEM PROFILE)
         add_custom_command(
             OUTPUT "${out}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${RENUT_GPU_GEN_DIR}/host_shaders"
-            COMMAND "${PYTHON_EXECUTABLE}" "${tool}" --dxc ${RENUT_DXC} --spirv-cross "${BANJO_DEKO3D_SPIRV_CROSS}"
+            COMMAND ${CMAKE_COMMAND} -E env ${RENUT_DXC_ENV} "${PYTHON_EXECUTABLE}" "${tool}" --dxc "${RENUT_DXC}" --spirv-cross "${BANJO_DEKO3D_SPIRV_CROSS}"
                     --uam "${BANJO_DEKO3D_UAM}" --profile ${PROFILE} --stem ${STEM} --src "${src}" --out "${out}"
             DEPENDS "${src}" ${host_includes} "${tool}" "${CMAKE_SOURCE_DIR}/../tools/deko3d_glsl.py"
             COMMENT "Compiling host shader ${STEM}.hlsl (${PROFILE}, deko3d)"
