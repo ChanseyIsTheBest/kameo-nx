@@ -9,6 +9,7 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
@@ -1142,10 +1143,16 @@ void KernelState::CompleteOverlapped(uint32_t overlapped_ptr, X_RESULT result) {
 void KernelState::CompleteOverlappedEx(uint32_t overlapped_ptr, X_RESULT result,
                                        uint32_t extended_error, uint32_t length) {
   auto ptr = memory()->TranslateVirtual(overlapped_ptr);
-  XOverlappedSetResult(ptr, result);
+  // The result is written last. A game polling it may read the length and free the structure as soon
+  // as it stops saying pending, so nothing of the structure is touched after that, and everything it
+  // reads next is already there. Kameo polls its content operations this way (sub_82106030).
+  const X_HANDLE event_handle = XOverlappedGetEvent(ptr);
+  const uint32_t routine = XOverlappedGetCompletionRoutine(ptr);
+  const X_HANDLE thread_handle = routine ? XOverlappedGetContext(ptr) : 0;
   XOverlappedSetExtendedError(ptr, extended_error);
   XOverlappedSetLength(ptr, length);
-  X_HANDLE event_handle = XOverlappedGetEvent(ptr);
+  std::atomic_thread_fence(std::memory_order_release);
+  XOverlappedSetResult(ptr, result);
   if (event_handle) {
     auto ev = object_table()->LookupObject<XEvent>(event_handle);
     assert_not_null(ev);
@@ -1153,12 +1160,10 @@ void KernelState::CompleteOverlappedEx(uint32_t overlapped_ptr, X_RESULT result,
       ev->Set(0, false);
     }
   }
-  if (XOverlappedGetCompletionRoutine(ptr)) {
-    X_HANDLE thread_handle = XOverlappedGetContext(ptr);
+  if (routine) {
     auto thread = object_table()->LookupObject<XThread>(thread_handle);
     if (thread) {
       // Queue APC on the thread that requested the overlapped operation.
-      uint32_t routine = XOverlappedGetCompletionRoutine(ptr);
       thread->EnqueueApc(routine, result, length, overlapped_ptr);
     }
   }

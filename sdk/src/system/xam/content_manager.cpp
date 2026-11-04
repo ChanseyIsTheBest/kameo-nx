@@ -9,8 +9,12 @@
  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
  */
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
+#include <deque>
+#include <mutex>
 #include <queue>
 #include <string>
 
@@ -48,6 +52,21 @@
 REXCVAR_DEFINE_STRING(content_backup_root, "", "Kernel",
                       "Folder where a copy of each save is left, with one subfolder per profile. "
                       "Empty = nothing is copied");
+
+/*
+ * A closed DLC pack stays readable.
+ *
+ * Kameo closes its four DLC packs at boot and mounts them again under new root names while its file
+ * thread still has requests queued for the old ones. Unmounting at once has two results:
+ *   - an open queued on an old root fails ('dlc2:\audio\M_DLCsfx.xwb', on every console boot with DLC);
+ *   - a file still open in the pack loses its handle, so the next read of it fails, and the game sends
+ *     a failed read to its bad-disc message (sub_82107628 -> sub_820BA680).
+ * Packs of content type 2 are never written, so nothing needs them gone: on close they stop counting
+ * as open, but their root and their files keep working. A save container still unmounts at once, as
+ * it has to for its files to be in place.
+ */
+REXCVAR_DEFINE_BOOL(content_keep_closed_dlc, true, "Kernel",
+                    "A closed DLC pack keeps its root and its open files until the game has moved on");
 // katamari-nx (2026-11-01): DLC kept from the game without uninstalling it (the user: Beautiful Katamari's packs that
 // only unlock what the game unlocks by itself take the fun out of unlocking it). The app's kameo_dlc_unlock_packs
 // adds those packs' names; anything listed here is left out of the game's DLC list, and emptying it shows them again.
@@ -458,6 +477,69 @@ X_RESULT ContentManager::ReadContentHeaderFile(const std::string_view file_name,
   return X_ERROR_SUCCESS;
 }
 
+namespace {
+
+// See content_keep_closed_dlc. Two passes of the game's four packs; only past that does the oldest go.
+constexpr size_t kClosedDlcKept = 8;
+
+struct ClosedDlc {
+  std::string root;
+  ContentPackage* package;
+};
+
+std::mutex g_closed_dlc_lock;
+std::deque<ClosedDlc> g_closed_dlc;
+
+bool SameRoot(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(a[i])) !=
+        std::tolower(static_cast<unsigned char>(b[i]))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void UnmountClosedDlc(ContentManager* manager, const ClosedDlc& pack) {
+  manager->CloseOpenedFilesFromContent(pack.root);
+  delete pack.package;
+}
+
+void KeepClosedDlc(ContentManager* manager, std::string_view root_name, ContentPackage* package) {
+  ClosedDlc oldest{};
+  {
+    std::lock_guard<std::mutex> lock(g_closed_dlc_lock);
+    g_closed_dlc.push_back({std::string(root_name), package});
+    if (g_closed_dlc.size() <= kClosedDlcKept) {
+      return;
+    }
+    oldest = g_closed_dlc.front();
+    g_closed_dlc.pop_front();
+  }
+  UnmountClosedDlc(manager, oldest);
+}
+
+// A root name used again has to reach the new package, not a kept one.
+void ForgetClosedDlc(ContentManager* manager, std::string_view root_name) {
+  ClosedDlc found{};
+  {
+    std::lock_guard<std::mutex> lock(g_closed_dlc_lock);
+    auto it = std::find_if(g_closed_dlc.begin(), g_closed_dlc.end(),
+                           [&](const ClosedDlc& pack) { return SameRoot(pack.root, root_name); });
+    if (it == g_closed_dlc.end()) {
+      return;
+    }
+    found = *it;
+    g_closed_dlc.erase(it);
+  }
+  UnmountClosedDlc(manager, found);
+}
+
+}  // namespace
+
 X_RESULT ContentManager::CreateContent(const std::string_view root_name, uint64_t xuid,
                                        const XCONTENT_AGGREGATE_DATA& data) {
   {
@@ -466,6 +548,7 @@ X_RESULT ContentManager::CreateContent(const std::string_view root_name, uint64_
       return X_ERROR_ALREADY_EXISTS;
     }
   }
+  ForgetClosedDlc(this, root_name);
 
   auto package_path = ResolvePackagePath(xuid, data);
   REXSYS_INFO("[save] create '{}' (root {}) in {}", data.file_name(), root_name,
@@ -501,6 +584,7 @@ X_RESULT ContentManager::OpenContent(const std::string_view root_name, uint64_t 
       return X_ERROR_ALREADY_EXISTS;
     }
   }
+  ForgetClosedDlc(this, root_name);
 
   auto package_path = ResolvePackagePath(xuid, data);
   if (!std::filesystem::exists(package_path)) {
@@ -531,6 +615,7 @@ X_RESULT ContentManager::OpenContent(const std::string_view root_name, uint64_t 
 
 X_RESULT ContentManager::CloseContent(const std::string_view root_name) {
   ContentPackage* package = nullptr;
+  bool keep = false;
   {
     auto global_lock = global_critical_region_.Acquire();
     // Some games use different casing between Create and Close (e.g. "save" vs "SAVE")
@@ -538,15 +623,27 @@ X_RESULT ContentManager::CloseContent(const std::string_view root_name) {
     if (it == open_packages_.end()) {
       return X_ERROR_FILE_NOT_FOUND;
     }
-    package = DetachPackage(it);
+    keep = REXCVAR_GET(content_keep_closed_dlc) &&
+           it->second->GetPackageContentData().content_type == XContentType::kMarketplaceContent;
+    if (keep) {
+      package = it->second;
+      open_packages_.erase(it);
+    } else {
+      package = DetachPackage(it);
+    }
   }
   // The path and name are recorded before destroying the package, which is what holds them.
   const std::filesystem::path path = package->package_path();
   const std::string name = package->GetPackageContentData().file_name();
-  delete package;  // unmounts the guest drive: from here on the files are in place
+  if (keep) {
+    KeepClosedDlc(this, root_name, package);
+  } else {
+    delete package;  // unmounts the guest drive: from here on the files are in place
+  }
 
-  REXSYS_INFO("[save] close '{}' (root {}) in {} -> {}", name, root_name,
-              rex::path_to_utf8(path), ThatHasInside(path));
+  REXSYS_INFO("[save] close '{}' (root {}) in {} -> {}{}", name, root_name,
+              rex::path_to_utf8(path), ThatHasInside(path),
+              keep ? " (stays readable: content_keep_closed_dlc)" : "");
   CopyForTheUser(name, path);
   return X_ERROR_SUCCESS;
 }

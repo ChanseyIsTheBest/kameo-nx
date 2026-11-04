@@ -381,7 +381,20 @@ Reported by the Beautiful Katamari session, then checked here. Kameo's point spr
 - Not measured: the cost. Sprites now cover their real size, so a scene full of motes draws more pixels than it did.
 - The PC build was not rebuilt, so the D3D12 failure is fixed by the source but not re-run. The PC's shader cache and `shader_cache_switch.cpp` were left as they were: the console reads the GLSL package.
 
-## The disc message (found 2026-11-04, not fixed, cause unknown)
+## Crash at the Microsoft logo (rc13, 2026-11-04)
+
+The console's `rex_crash (17).log`: a read at guest address -8 in `n_82557A68`, the game's heap allocator, on the main thread during a file callback. It was walking a free list (head 0x40100180) and a block's next pointer was 0. So the heap was damaged earlier, and the log doesn't say by what. First time in the crash logs we have, and it has not been reproduced. The log has no `long frame split` line, so rc13's split did not run on that boot.
+
+What the boot does: `sub_82107270` is the game's file thread. It mounts the four DLC packs as `dlc0`-`dlc3`, closes them, and mounts them again as `dlc4`-`dlc7`, while requests for the old roots are still in its queue. All 5 console logs that mount DLC have a failed open of `dlc2:\audio\M_DLCsfx.xwb`, and in 2 of them `dlcCues.ssf` fails too. Which ones fail depends on the timing of the close. 6 of 50 emulator boots with DLC also have at least one such failed open. This crash came 0.6 s after the failed open, but 2 console boots with the same order survived, and nothing shows the failure damaged the heap.
+
+Two bugs of ours found on the way, both fixed in rc14. Neither is proven to be the cause:
+
+- **Closing a pack took its files with it.** `ContentManager::CloseContent` released the guest handle of every file open in the pack (`CloseOpenedFilesFromContent`), then destroyed the device. A later read on that handle fails. The game's read failure goes through flag 412 of the request to `sub_82107628`, then `sub_820BA680`, unless the request has its own failure handling (416, 420). Now content of type 2 (`content_keep_closed_dlc`, default true) only stops counting as open: its root and files keep working, up to 8 packs, and a root name used again drops the kept one. Save containers unmount as before.
+- **Completion was reported first.** `CompleteOverlappedEx` wrote the result, then the extended error and the length, then read the event and the routine. A game polling the result can read a stale length or free the structure while we are still writing to it. A length written into a freed block would land on its back link. The window is a few stores, so this is unlikely to be what happened here. Now the result is written last, with nothing of the structure touched after it. This is shared code, so the other ports may want it.
+
+## The disc message (found 2026-11-04, partly explained)
+
+**Partly explained 2026-11-04.** A failed read or open goes to `sub_820BA680`, which sets a flag and opens the UI page `InGameText`. That this is the disc page is inferred, not checked. It fits `emu58ab`, which does have the failed `M_DLCsfx.xwb` open, and `emu65sprite`, whose log has no failed open but could have lost a file handle in the close. It doesn't explain why other boots with the same failed open (`emu66boot`, `emu67sprite`, `emu71save`) carried on, so that request's failure flags still need reading. **A correction to the next paragraph:** "no file error in the log" is wrong for `emu58ab`.
 
 Sometimes the game boots to its own page, "There's a problem with the disc you're using", and stays there. Seen by screenshot in `emu58ab` (rc8) and `emu65sprite` (the sprite fix), so the fix did not cause it; the next two boots of that same build were fine. Both stop just after the last DLC pack mounts, with no file error in the log, and never reach the save list. Files and hard links were checked and are intact. The sign in a log is no `list type 00000001` line: 13 of 47 runs have that, but many are short, and most of their captures are gone, so **that is an upper bound, not a count**. Never reported on the console. It may be a race in loading: the two failing logs differ in order from a good one, which proves little because good boots vary too.
 

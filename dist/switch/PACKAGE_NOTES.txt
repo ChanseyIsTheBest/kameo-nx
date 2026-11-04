@@ -3,7 +3,25 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: the fix for the crash loading the big battle level. Nothing else changed since rc12.
+New in this package: two boot fixes aimed at the crash during the Microsoft logo. Nothing else changed since rc13.
+
+NOT RUN on your console. The crash was intermittent, so one clean boot proves little, and I have not proved these two bugs caused it.
+
+What the crash was: the game's own memory list was damaged, and the next allocation walked into it. Something wrote over it earlier, and the log does not say what.
+
+The two fixes:
+- At boot the game closes its DLC packs and mounts them again while it still has work queued on them. We pulled the packs away at once, so a queued open failed and any file still open lost its handle. A closed DLC pack now stays readable. A failed read also sends the game to its disc error, so this may be the "problem with the disc" message too.
+- When an operation finished, we marked it done before writing the rest of its result, so the game could act too early. Done is now written last.
+
+What to check:
+1. Boot it several times, past the Microsoft logo. Tell me about any crash or disc message.
+2. In renut_001.log, the line FAILED: path='dlc2:\audio\M_DLCsfx.xwb' should be gone, and the DLC "[save] close" lines should say "stays readable".
+3. Then everything rc13 asked for, below: the big battle level, portraits and the goblin army.
+4. DLC sounds and the DLC content in the menus, since that audio now loads where it used to fail.
+
+If it misbehaves, content_keep_closed_dlc = false in kameo.toml turns off the first fix. The second has no switch.
+
+From rc13: the fix for the crash loading the big battle level.
 
 The cause: that level's first frames send so much data per draw that our upload memory grew past 1.4 GB inside one frame and the console ran out. Now a frame past 192 MB is split: what it has drawn finishes on the GPU and the memory is reused, with nothing shown on screen. It should not change the picture.
 
