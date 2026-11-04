@@ -654,6 +654,16 @@ u32 NtReadFile_entry(u32 file_handle, u32 event_handle, mapped_void apc_routine_
     io_status_block->information = 0;
   }
 
+  // Kameo sends a failed read to its bad-disc message, and nothing else reports one.
+  if (XFAILED(result)) {
+    static std::atomic<int> left{200};
+    if (left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+      REXKRNL_WARN("[NtReadFile] FAILED: handle {:08X} '{}' at {} asked {} -> {:08X}",
+                   uint32_t(file_handle), file ? std::string(file->path()) : std::string("no such handle"),
+                   byte_offset, uint32_t(buffer_length), uint32_t(result));
+    }
+  }
+
   if (ev && signal_event) {
     ev->Set(0, false);
   }

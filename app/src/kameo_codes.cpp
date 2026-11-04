@@ -51,6 +51,33 @@ REXCVAR_DEFINE_INT32(kameo_codes_test_unlock, 0, "Kameo",
                      "For tests: features unlocked as if their codes had been entered, not saved. 1 Level Select, 2 Unlock All "
                      "Extras, 4 All Warriors & Upgrades, 8 Collectibles")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(kameo_ignore_disc_error, false, "Kameo",
+                    "For tests: the game's bad-disc message is logged but not shown, so the game carries on with whatever "
+                    "failed")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+
+/*
+ * sub_820BA680 raises "There's a problem with the disc". Four places call it: sub_82107628 (a file
+ * request failed), sub_82105200 (an open failed), and sub_82313330 and sub_82313F40 (audio data that
+ * could not be taken in, which includes an allocation failing). Which one it was tells the bug apart.
+ * Called from a hand edit at the top of sub_820BA680 in app/generated/renut_recomp.87.cpp, a diagnostic
+ * that the next codegen drops. Name the offset from the package's ELF.
+ */
+#if defined(__SWITCH__)
+extern "C" char __start__[];
+#endif
+extern "C" int KameoNoteDiscError(void* host_caller) {
+#if defined(__SWITCH__)
+  const uintptr_t image = reinterpret_cast<uintptr_t>(__start__);
+#else
+  const uintptr_t image = 0;
+#endif
+  const bool ignore = REXCVAR_GET(kameo_ignore_disc_error);
+  REXLOG_WARN("[kameo] bad-disc message raised, caller at image+{:#x}{}",
+              reinterpret_cast<uintptr_t>(host_caller) - image,
+              ignore ? ", not shown (kameo_ignore_disc_error)" : "");
+  return ignore ? 1 : 0;
+}
 
 REX_EXTERN(__imp__sub_824454B0);  // storybookSimplePauseObj_tick(pauseObj)
 REX_EXTERN(__imp__sub_82445BD8);  // setupMenuItemsForSettingsMenu(window, pauseObj)

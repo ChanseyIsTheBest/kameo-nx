@@ -14,6 +14,8 @@
 #include <string.h>
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -260,6 +262,18 @@ class PosixFileHandle : public FileHandle {
     if (!bounce) bounce = std::make_unique<uint8_t[]>(kPiece);
     return bounce.get();
   }
+  // A read that fails or stops early, unless it stopped at the end of the file. The layers above
+  // turn a failure into a quiet end of file, and on Horizon a read at or past the end fails with EIO
+  // where POSIX returns 0 (wmw_nx PORTING_WMW.md 10.1), so the size goes in the line.
+  void NoteBadRead(const char* what, size_t offset, size_t asked, ssize_t got, int error) const {
+    struct stat st {};
+    const long long size = fstat(handle_, &st) == 0 ? static_cast<long long>(st.st_size) : -1;
+    if (got >= 0 && static_cast<long long>(offset) + got == size) return;
+    static std::atomic<int> left{200};
+    if (left.fetch_sub(1, std::memory_order_relaxed) <= 0) return;
+    REXFS_WARN("[io] {}: '{}' at {} asked {} got {} (size {}, errno {})", what,
+               rex::path_to_utf8(path()), offset, asked, got, size, error);
+  }
   bool Read(size_t file_offset, void* buffer, size_t buffer_length,
             size_t* out_bytes_read) override {
     uint8_t* const bounce = Bounce();
@@ -269,6 +283,7 @@ class PosixFileHandle : public FileHandle {
       const size_t piece = std::min(kPiece, buffer_length - total);
       const ssize_t got = pread(handle_, bounce, piece, off_t(file_offset + total));
       if (got < 0) {
+        NoteBadRead("read failed", file_offset + total, piece, got, errno);
         if (!total) {
           *out_bytes_read = 0;
           return false;
@@ -277,7 +292,10 @@ class PosixFileHandle : public FileHandle {
       }
       std::memcpy(out + total, bounce, size_t(got));
       total += size_t(got);
-      if (size_t(got) < piece) break;
+      if (size_t(got) < piece) {
+        NoteBadRead("short read", file_offset + total - size_t(got), piece, got, errno);
+        break;
+      }
     }
     *out_bytes_read = total;
     return true;

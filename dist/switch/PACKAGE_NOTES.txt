@@ -3,9 +3,18 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: two boot fixes aimed at the crash during the Microsoft logo. Nothing else changed since rc13.
+New in this package: a diagnostic for the "problem with the disc" message you hit on rc14. It does not fix it. Everything else is as in rc14.
 
-NOT RUN on your console. The crash was intermittent, so one clean boot proves little, and I have not proved these two bugs caused it.
+The cause is unknown. The message can come from four places in the game, and a failed file read was silent in our logs until now.
+
+What to do:
+1. Boot it as usual. If the disc message appears, send renut_001.log. The lines to look for are "[kameo] bad-disc message raised", "[NtReadFile] FAILED", "[io] read failed" and "[io] short read".
+2. To get past the message, set kameo_ignore_disc_error = true in kameo.toml. The message is then logged but not shown, and the game carries on with whatever failed, so sound or DLC content may be missing, and it may crash. It's for testing only.
+3. Also useful: boot with content_keep_closed_dlc = false and tell me whether the message still appears. That undoes rc14's DLC change.
+
+From rc14: two boot fixes aimed at the crash during the Microsoft logo.
+
+The crash was intermittent, so one clean boot proves little, and I have not proved these two bugs caused it.
 
 What the crash was: the game's own memory list was damaged, and the next allocation walked into it. Something wrote over it earlier, and the log does not say what.
 
