@@ -28,6 +28,15 @@
 // banjo-nx (2026-10-17, deko3d renderer): every graphics pipeline's shaders and specialization constants, one line each,
 // for tools/deko3d_variant_cache.py (the DKSH cache of the deko3d back end, compiled on the PC). Any back end: the
 // constants are the renderer's. Written next to the executable.
+// kameo-nx (2026-11-04, the audit against Kameo: RePowered, by MaxDeadBear and BiRabittoh: MIT, THIRD_PARTY_NOTICES.md).
+REXCVAR_DEFINE_BOOL(banjo_renut_cull_both, true, "Banjo/Enhancements",
+                    "PA_SU_SC_MODE_CNTL with both cull bits set culls every face, as on the console; off draws both faces. "
+                    "Changes the picture, towards the original")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+REXCVAR_DEFINE_BOOL(banjo_renut_poly_offset, true, "Banjo/Enhancements",
+                    "The game's polygon offset (decals over the surface they sit on), read from nowhere before; off leaves "
+                    "them to z-fight. Deko3D only. Changes the picture, towards the original")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(banjo_deko3d_variant_log, false, "Banjo/Renut",
                     "Write deko3d_variants.txt next to the executable: each graphics pipeline's vertex and pixel shader "
                     "and specialization constants (tools/deko3d_variant_cache.py builds the deko3d DKSH cache from it)");
@@ -70,6 +79,11 @@ REXCVAR_DEFINE_STRING(renut_pipeline_list, "pipeline_list.bin", "Nuts&Bolts/Grap
                       "next start (delete it to start over)");
 
 namespace renut::gpu {
+
+bool PolyOffsetOn() {
+  static const bool on = REXCVAR_GET(banjo_renut_poly_offset) && IsDeko3D();
+  return on;
+}
 
 namespace {
 
@@ -313,7 +327,10 @@ std::unique_ptr<plume::RenderPipeline> Build(const PipelineKey &key, const Pipel
   const bool cull_back = !key.point_sprite && (key.mode_control & 2);
   desc.cullMode = cull_front && !cull_back   ? plume::RenderCullMode::FRONT
                   : cull_back && !cull_front ? plume::RenderCullMode::BACK
+                  : cull_front && REXCVAR_GET(banjo_renut_cull_both) ? plume::RenderCullMode::FRONT_AND_BACK
                                              : plume::RenderCullMode::NONE;
+  // kameo-nx (2026-11-04): set per draw (draw.cpp ApplyPolyOffsetLocked), so a pipeline need not exist per offset.
+  desc.dynamicDepthBiasEnabled = PolyOffsetOn();
   desc.frontFace = (key.mode_control & 4) ? plume::RenderFrontFace::CLOCKWISE
                                           : plume::RenderFrontFace::COUNTER_CLOCKWISE;
   desc.depthClipEnabled = true;

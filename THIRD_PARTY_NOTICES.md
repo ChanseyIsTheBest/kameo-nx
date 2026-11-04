@@ -24,7 +24,7 @@ this repository (`app/`, `tools/`, `docs/`) is GPL-3.0 (`LICENSE`).
 
 Kameo: RePowered by MaxDeadBear and BiRabittoh: its host-side source, tools and CI configuration are available under the
 MIT License (its README). This port took its function list, setjmp and longjmp addresses, each checked against the patched
-image (`app/config/renut_funcs.toml`, `app/renut_config.toml`), `app/src/kameo_fp_guard.cpp` (its `src/core/fp_guard.cpp`), the cheat codes in `app/src/kameo_codes.cpp` and `app/src/kameo_collectibles.inc` (its `src/ui/pause_menu/`, `src/ui/text_window.cpp`, `src/engine/`),
+image (`app/config/renut_funcs.toml`, `app/renut_config.toml`), `app/src/kameo_fp_guard.cpp` (its `src/core/fp_guard.cpp`), the real occlusion counts in `app/src/renut_engine/gpu/render/occlusion.cpp` (its `src/gpu/occlusion.cpp`), the cheat codes in `app/src/kameo_codes.cpp` and `app/src/kameo_collectibles.inc` (its `src/ui/pause_menu/`, `src/ui/text_window.cpp`, `src/engine/`),
 the CAFF archive layout in `tools/kameo_files.py`, and every graft named in `docs/kameo-notes.md`. Those parts stay under:
 
 ```

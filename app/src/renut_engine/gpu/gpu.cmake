@@ -274,6 +274,7 @@ function(renut_gpu_setup TARGET)
         ${RENUT_GPU_DIR}/render/pipeline.cpp
         ${RENUT_GPU_DIR}/render/shader_library.cpp
         ${RENUT_GPU_DIR}/render/smaa.cpp  # banjo-nx (2026-10-21)
+        ${RENUT_GPU_DIR}/render/occlusion.cpp  # kameo-nx (2026-11-04)
         ${RENUT_GPU_DIR}/render/ui_scale.cpp  # banjo-nx (2026-10-21, internal resolution)
         ${RENUT_GPU_DIR}/render/surfaces.cpp
         ${RENUT_GPU_DIR}/render/texture_layout.cpp

@@ -3,7 +3,29 @@ kameo-nx: notes for this package
 
 Ryujinx and the PC are proxies: every timing they give is theirs, not the A57's. Your two console runs are the only real measurements.
 
-New in this package: point sprites are fixed. Nothing else changed since rc9.
+New in this package: four rendering fixes from your rc10 run and the audit against RePowered. All change the picture, towards the original.
+
+NOT RUN. These compile and link. They have not been run on the emulator or anywhere else, so this is their first test. A mistake in one could make things worse.
+
+Each has a key. If something looks broken, set it to false in kameo.toml to see which one did it:
+  banjo_renut_real_occlusion      light glows hidden behind walls
+  banjo_renut_poly_offset         decals sitting over a surface
+  banjo_renut_cull_both           draws the game culls entirely
+  banjo_renut_last_pixel_shader   colour draws with no pixel shader bound
+
+What to test, in order:
+1. The dots on walls. On the courtyard wall from your screenshot, the orange dots should be gone, as in your hardware video. Torches and lights you can see should keep their glow. If every glow has vanished, the counts are coming back as 0: tell me.
+2. Blue and pink dots on the same wall. I have not identified these. The occlusion fix may remove them, or they may be sprites from rc10. Tell me which.
+3. The portrait, with your save. A guess, not a finding: banjo_renut_last_pixel_shader may fix it. If it does not, the next suspect is how we read the portrait back after drawing it.
+4. The glitter around the teleport pad in your save: bright white hexagons and rings. It may be correct. I have not compared it with hardware or with rc9.
+5. Fading models, such as a baby warrior being absorbed. They may now draw where they did not.
+6. Your frame rate. Occlusion queries and polygon offset add a little work per draw that uses them. Not measured.
+
+What to send me: renut_001.log, and a screenshot of anything wrong. The log has a line starting "[kameo] occlusion queries" with how many came back 0 samples and how many timed out.
+
+The ring columns above Kameo's hands in the intro are cracked-ice marks she leaves on the wall. They are also in your hardware video, though I can only compare them through its compression. These fixes may change them slightly.
+
+From rc10: point sprites are fixed.
 
 Kameo's dust motes, the burst of motes and the water cannon's spray were drawn at the wrong size and sampled one fixed texel of their texture. They should now look right. This changes the picture of those effects, towards the original.
 

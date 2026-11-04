@@ -47,6 +47,7 @@ extern "C" char *fake_heap_end;  // libnx: the end of the malloc heap
 #include "renut_engine/gpu/render/pipeline.h"
 #include "renut_engine/gpu/guest/resources.h"
 #include "renut_engine/gpu/render/shader_library.h"  // banjo-nx: ShaderBoolSpecMask
+#include "renut_engine/gpu/render/occlusion.h"
 #include "renut_engine/gpu/render/surfaces.h"
 #include "renut_engine/gpu/render/textures.h"
 #include "renut_engine/gpu/render/vertex_format.h"
@@ -304,6 +305,11 @@ REXCVAR_DEFINE_BOOL(banjo_renut_host_packets, false, "Banjo/Enhancements",
                     "(shaders, declaration, targets, textures' words, bools, viewport, pipeline) kept by the draw's whole "
                     "device state (a key the recording threads make as they record); a later draw of the same state "
                     "takes it instead of deriving it again. Exact: the same state, and every epoch the answers depend on")
+    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+// kameo-nx (2026-11-04): LastPixelShaderApplies.
+REXCVAR_DEFINE_BOOL(banjo_renut_last_pixel_shader, true, "Banjo/Enhancements",
+                    "A colour draw with no pixel shader bound uses the last one bound, as the console's GPU does; off "
+                    "writes depth and no colour. Changes the picture, towards the original")
     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
 REXCVAR_DEFINE_BOOL(banjo_renut_diag_fast_census, false, "Banjo/Diagnostics",
                     "Renut's renderer (2026-10-26, the record-time draw path's stage 1): every 10 s, what changed from "
@@ -8320,6 +8326,40 @@ bool FastExportReads(const GuestDevice &device, const DrawCall &call, const Shad
   return false;
 }
 
+// kameo-nx (2026-11-04, the audit against Kameo: RePowered, by MaxDeadBear and BiRabittoh: MIT, THIRD_PARTY_NOTICES.md).
+// With no pixel shader bound the GPU keeps colouring with the last one loaded, unless the EDRAM is in depth-only mode
+// (5): fading models such as an absorbed baby warrior draw this way. A null shader is depth-only with no colour target
+// and for an occlusion query's test quad. By its address: a record can go when the game frees its shader.
+u32 g_last_pixel_shader_va = 0;
+bool LastPixelShaderApplies(const GuestDevice &device) {
+  static const bool on = REXCVAR_GET(banjo_renut_last_pixel_shader);
+  return on && g_last_pixel_shader_va && device.U32(d3d::kDeviceOffsetRenderTargets) != 0 &&
+         (u32(device.dev().m_ControlPacket.EdramModeControl) & 7) != 5 && !OcclusionQueryOpenLocked();
+}
+
+// kameo-nx (2026-11-04, the same audit): PA_SU_POLY_OFFSET_FRONT, in the device's private words. The offset is in
+// normalised depth (deko3d's units are 1/2^24 of it on D24, and it doubles them for the hardware itself), the scale is
+// stored times 16. The host has one pair for both faces: the front's, which is what decals use. Only an offset is
+// written each draw, since a host pipeline's bind can zero the register; the return to none once.
+bool g_poly_offset_set = false;
+void ApplyPolyOffsetLocked(plume::RenderCommandList *cmd, const GuestDevice &device) {
+  static constexpr u32 kPolyOffsetFrontScale = 0x2E90, kPolyOffsetFrontOffset = 0x2E94;
+  static constexpr u32 kPolyOffsetFrontEnable = 1u << 11;
+  static const bool on = PolyOffsetOn();
+  if (!on)
+    return;
+  const bool enabled = (u32(device.dev().m_ControlPacket.ModeControl) & kPolyOffsetFrontEnable) != 0;
+  const float constant = enabled ? device.F32(kPolyOffsetFrontOffset) * 16777216.0f : 0.0f;
+  const float slope = enabled ? device.F32(kPolyOffsetFrontScale) / 16.0f : 0.0f;
+  if (constant != 0.0f || slope != 0.0f) {
+    cmd->setDepthBias(constant, 0.0f, slope);
+    g_poly_offset_set = true;
+  } else if (g_poly_offset_set) {
+    cmd->setDepthBias(0.0f, 0.0f, 0.0f);
+    g_poly_offset_set = false;
+  }
+}
+
 int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayConstants *replay) {
   // It keeps what the persistent shared constants, the pushed constants and the chain's hints make possible.
   // banjo-nx (round 4, ARM): the switches read once, one guard a draw.
@@ -8427,6 +8467,12 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
         __builtin_prefetch(p + 128);
       }
     }
+  }
+  if (shaders_changed) {  // kameo-nx (2026-11-04): LastPixelShaderApplies. The full path makes that draw's state.
+    if (const u32 ps_va = device.U32(d3d::kDeviceOffsetPixelShader))
+      g_last_pixel_shader_va = ps_va;
+    else if (LastPixelShaderApplies(device))
+      return FastMiss(kFastShaders);
   }
   // The declaration as DrawStateLocked finds it: the device's, else the one D3DVertexShader_Bind bound to the shader,
   // else the shader's own fetches', else none; again when the shaders or the device's word changed.
@@ -9217,6 +9263,7 @@ int FastDrawLocked(const u8 *device_state, const DrawCall &call, const ReplayCon
       targets.depth->stencil_used = true;
   }
   ++s.list_draws;  // Video::NoteDrawLocked
+  ApplyPolyOffsetLocked(cmd, device);  // kameo-nx (2026-11-04)
   if (geometry.indexed) {
     // banjo-nx (2026-10-27, render thread night, A/B 38): a whole index copy is a piece of a pool chunk: the chunk bound at
     // its start and the copy's place given as the first index, so the draws of every copy in one chunk keep one binding
@@ -9752,6 +9799,11 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
   auto *vs = FindShaderLocked(vs_va, RecordKind::VertexShader);
   const u32 declaration_va = device.U32(d3d::kDeviceOffsetVertexDeclaration);
   auto *ps = FindShaderLocked(device.U32(d3d::kDeviceOffsetPixelShader), RecordKind::PixelShader);
+  // kameo-nx (2026-11-04): LastPixelShaderApplies.
+  if (const u32 ps_va = device.U32(d3d::kDeviceOffsetPixelShader))
+    g_last_pixel_shader_va = ps_va;
+  else if (LastPixelShaderApplies(device))
+    ps = FindShaderLocked(g_last_pixel_shader_va, RecordKind::PixelShader);
   // Without a declaration set, the shader fetches as D3DVertexShader_Bind
   // bound it, or else as its own vfetches describe (bundle meshes).
   const VertexDeclarationRecord *declaration = nullptr;
@@ -10876,6 +10928,7 @@ bool DrawStateLocked(const u8 *device_state, const DrawCall &call, const ReplayC
     UnleashedCensusDraw(device, call, texture_mask, declaration->layout.used_mask, prefetch_streams,
                         prefetch_stream_count, prefetch_indexed ? &prefetch_index : nullptr);
   Video::NoteDrawLocked();  // banjo-nx (2026-10-19, banjo_deko3d_kick_submit): the open list's draws
+  ApplyPolyOffsetLocked(cmd, device);  // kameo-nx (2026-11-04)
   if (geometry.indexed) {
     SetIndexBuffer(cmd, geometry.index_view);
     // banjo-nx: instanced for a tessellation grid (banjo_gpu_tess_grid); 1 for every other indexed draw.

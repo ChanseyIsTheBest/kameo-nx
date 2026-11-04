@@ -1204,6 +1204,39 @@ namespace plume {
     void Deko3DCommandList::discardTexture(const RenderTexture *) {}
     void Deko3DCommandList::resetQueryPool(const RenderQueryPool *, uint32_t, uint32_t) {}
 
+    // kameo-nx (2026-11-04): see plume_deko3d.h. Both go in order with the draws of the list.
+    void Deko3DResetSamplesPassed(RenderCommandList *commandList) {
+        dkCmdBufResetCounter(static_cast<Deko3DCommandList *>(commandList)->cmd, DkCounter_SamplesPassed);
+    }
+
+    void Deko3DReportSamplesPassed(RenderCommandList *commandList, const RenderQueryPool *queryPool, uint32_t queryIndex) {
+        const Deko3DQueryPool *pool = static_cast<const Deko3DQueryPool *>(queryPool);
+        if (!pool || !pool->block || queryIndex >= pool->results.size())
+            return;
+        dkCmdBufReportCounter(static_cast<Deko3DCommandList *>(commandList)->cmd, DkCounter_SamplesPassed,
+                              dkMemBlockGetGpuAddr(pool->block) + uint64_t(queryIndex) * 16);
+    }
+
+    void Deko3DClearReport(const RenderQueryPool *queryPool, uint32_t queryIndex) {
+        const Deko3DQueryPool *pool = static_cast<const Deko3DQueryPool *>(queryPool);
+        if (!pool || !pool->block || queryIndex >= pool->results.size())
+            return;
+        volatile uint64_t *reports = static_cast<volatile uint64_t *>(dkMemBlockGetCpuAddr(pool->block));
+        reports[queryIndex * 2] = 0;
+        reports[queryIndex * 2 + 1] = 0;
+    }
+
+    bool Deko3DReadReport(const RenderQueryPool *queryPool, uint32_t queryIndex, uint64_t *value) {
+        const Deko3DQueryPool *pool = static_cast<const Deko3DQueryPool *>(queryPool);
+        if (!pool || !pool->block || queryIndex >= pool->results.size())
+            return false;
+        const volatile uint64_t *reports = static_cast<const volatile uint64_t *>(dkMemBlockGetCpuAddr(pool->block));
+        if (reports[queryIndex * 2 + 1] == 0)
+            return false;
+        *value = reports[queryIndex * 2];
+        return true;
+    }
+
     void Deko3DCommandList::writeTimestamp(const RenderQueryPool *queryPool, uint32_t queryIndex) {
         const Deko3DQueryPool *pool = static_cast<const Deko3DQueryPool *>(queryPool);
         if (!pool || !pool->block || queryIndex >= pool->results.size())

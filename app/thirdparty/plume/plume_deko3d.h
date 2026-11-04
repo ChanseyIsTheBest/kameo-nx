@@ -775,6 +775,13 @@ namespace plume {
         return Deko3DPushUniformSlow(commandList, address, uboSize, offset, data, size);
     }
     bool Deko3DSetSharedWords(RenderCommandList *commandList, const void *cpu, uint32_t size);
+    // kameo-nx (2026-11-04, render/occlusion.cpp): the samples-passed counter, reported into a query pool. A report's
+    // second word (the GPU's timestamp) is 0 until the GPU has written it: Deko3DClearReport empties it first, and
+    // Deko3DReadReport is false until then.
+    void Deko3DResetSamplesPassed(RenderCommandList *commandList);
+    void Deko3DReportSamplesPassed(RenderCommandList *commandList, const RenderQueryPool *queryPool, uint32_t queryIndex);
+    void Deko3DClearReport(const RenderQueryPool *queryPool, uint32_t queryIndex);
+    bool Deko3DReadReport(const RenderQueryPool *queryPool, uint32_t queryIndex, uint64_t *value);
     // banjo-nx: the queue lost (dkQueueIsInErrorState).
     bool Deko3DDeviceLost(RenderDevice *device);
     // banjo-nx (2026-10-21, Deko3DOptions::asyncVariants): a pipeline made while some of its variants were compiled in

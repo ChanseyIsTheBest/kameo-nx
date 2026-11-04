@@ -2352,7 +2352,7 @@ namespace plume {
         p->primitive = toDk(desc.primitiveTopology);
 
         dkRasterizerStateDefaults(&p->rasterizer);
-        p->rasterizer.cullMode = desc.cullMode == RenderCullMode::FRONT ? DkFace_Front : desc.cullMode == RenderCullMode::BACK ? DkFace_Back : DkFace_None;
+        p->rasterizer.cullMode = desc.cullMode == RenderCullMode::FRONT ? DkFace_Front : desc.cullMode == RenderCullMode::BACK ? DkFace_Back : desc.cullMode == RenderCullMode::FRONT_AND_BACK ? DkFace_FrontAndBack : DkFace_None;
         p->rasterizer.frontFace = desc.frontFace == RenderFrontFace::COUNTER_CLOCKWISE ? DkFrontFace_CCW : DkFrontFace_CW;
         // D3D's (and Vulkan's) provoking vertex is the first one.
         p->rasterizer.provokingVertex = DkProvokingVertex_First;

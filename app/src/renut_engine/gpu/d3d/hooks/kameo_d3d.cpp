@@ -36,6 +36,7 @@
 #include "renut_engine/gpu/guest/resources.h"
 #include "renut_engine/gpu/log.h"
 #include "renut_engine/gpu/render/draw.h"
+#include "renut_engine/gpu/render/occlusion.h"
 #include "renut_engine/gpu/render/surfaces.h"
 
 extern std::atomic<uint64_t> g_banjo_game_frames;  // kameo_keys.cpp: frames presented
@@ -478,16 +479,27 @@ BANJO_RENUT_HOOK_RAW(sub_820D16F0) {
   FlushDeferredVertices(ctx.r3.u32);
 }
 
-// HRESULT D3DQuery_GetData(D3DQuery*, void *pData, DWORD Size, DWORD Flags): a hardware occlusion query (type 9) has no GPU
-// behind it: every sample visible until its graft (docs/kameo-notes.md). Others are the game's.
+// void D3DQuery_Issue(D3DQuery*, DWORD Flags): kameo-nx (2026-11-04): a hardware occlusion query (type 9) goes to the GPU
+// as well, in order with the draws (render/occlusion.cpp). The device is the query's first word.
 constexpr u32 kQueryTypeOcclusion = 9;
-constexpr u32 kFakeOcclusionSamples = 1000;
+BANJO_RENUT_HOOK_RAW(sub_820D2668) {
+  const u32 query = ctx.r3.u32;
+  const u32 flags = ctx.r4.u32;
+  __imp__sub_820D2668(ctx, base);
+  if (query && Word(query + 4) == kQueryTypeOcclusion)
+    OcclusionQueryIssue(Word(query), query, flags);
+}
+
+// HRESULT D3DQuery_GetData(D3DQuery*, void *pData, DWORD Size, DWORD Flags): an occlusion query's count, S_FALSE while it
+// is on its way, as on the hardware (render/occlusion.cpp). Others are the game's.
 BANJO_RENUT_HOOK_RAW(sub_820D27F0) {
   if (!ctx.r3.u32 || Word(ctx.r3.u32 + 4) != kQueryTypeOcclusion) {
     __imp__sub_820D27F0(ctx, base);
     return;
   }
-  if (ctx.r4.u32 && ctx.r5.u32 >= 4)
-    SetWord(ctx.r4.u32, kFakeOcclusionSamples);
-  ctx.r3.u64 = 0;
+  u32 samples = 0;
+  const bool ready = OcclusionQueryResult(ctx.r3.u32, &samples);
+  if (ready && ctx.r4.u32 && ctx.r5.u32 >= 4)
+    SetWord(ctx.r4.u32, samples);
+  ctx.r3.u64 = ready ? 0 : 1;
 }

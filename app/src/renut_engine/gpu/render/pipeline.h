@@ -141,6 +141,8 @@ PipelineCounts PipelineCountsLocked();
 // banjo-nx (2026-10-28, per-draw night): whether the last GetPipelineLocked answer was provisional (a specialised key's
 // generic pipeline while its own is built: the answer changes with the prebuild epoch). Render thread.
 bool LastPipelineProvisionalLocked();
+// kameo-nx (2026-11-04): banjo_renut_poly_offset, on deko3d.
+bool PolyOffsetOn();
 // banjo-nx (2026-10-28, the heap): the prebuilt pipelines no draw has taken for banjo_renut_prebuild_release_s go
 // back to the heap (their jobs stay: built again if a draw asks). Render thread, once a frame (checks every 20 s).
 void ReleaseIdlePrebuiltPipelines();

@@ -391,6 +391,32 @@ Sometimes the game boots to its own page, "There's a problem with the disc you'r
 
 **Another one, in the census diagnostic:** `emu67sprite` with `banjo_renut_diag_fast_census = true` died at 5:41 with a read of address 0, in a block starting at `FastCensusDraw`. `emu69grad` with the census off ran its full 16 minutes in the same scene. So the census is the suspect, though nothing in that function's first lines reads address 0. The key is off by default and not fixed. Do not use it for long gameplay runs.
 
+## Audit against RePowered's renderer (2026-11-04, the user's request)
+
+From the user's console run of rc10: a corrupted dialogue portrait, and glowing dots on walls that real hardware does not have. Then "audit for any issues we may have for the rendering like repowered". I read the comments and options of its `src/gpu` (draws, surfaces, resolves, textures, vertices, shader mods, hooks), not every line, and checked each candidate in ours by reading. Its stereo, HUD layout, movie replacement and texture pack code are features, not fixes, and were left out.
+
+**Fixed, each with a key, on by default. All compile; none has been run anywhere.** All change the picture, towards the original.
+
+| Key | What was wrong |
+|---|---|
+| `banjo_renut_real_occlusion` | Every occlusion query answered 1000 samples, so a light glow behind a wall drew anyway. Now deko3d's samples-passed counter, in order with the draws (`render/occlusion.cpp`, a new hook on D3DQuery_Issue 820D2668). The emulated reference fakes it too, which is why no comparison with it caught this. The glows and the sun are the only two users |
+| `banjo_renut_poly_offset` | Nothing read the game's polygon offset at all, so decals could z-fight. Set per draw from the device (0x2E90, 0x2E94, enable bit 11 of ModeControl), front values for both faces as RePowered |
+| `banjo_renut_cull_both` | ModeControl with both cull bits drew both faces. Now a real cull of both on deko3d, so the vertex shader still runs. RePowered drops the draw |
+| `banjo_renut_last_pixel_shader` | A colour draw with no pixel shader wrote depth and no colour. The GPU keeps the last shader unless the EDRAM is depth-only (5). RePowered says fading models draw this way, such as an absorbed baby warrior. Not with no colour target, nor inside an occlusion query. **The likeliest of these to matter for the portrait, which looks like depth with no colour; that is a guess** |
+
+**The ring columns over Kameo's hands are not one of these.** They are cracked-ice decals (a 128x128 BC2 texture) she leaves on the wall, and they are in a hardware video too. Column contrast in the blue channel: hardware 10.1 and 8.0, ours 14.3 and 11.3, ours after blur and JPEG 9.3 and 7.5, at nearly the same x. That is one frame and a simulated codec, so it suggests rather than proves they match.
+
+**Open, nothing changed:**
+- **A resolve with no rectangle.** Ours takes the destination's size from the corner of the surface. RePowered: the guest means the current viewport, and imposterModelRender moves it between 21 slots of a 128x128 scratch pad, each resolved to its own texture. Ours would read the wrong slot. Not exercised in the intro. **Next suspect for the portrait if `banjo_renut_last_pixel_shader` does not fix it.**
+- **DXN channel order.** RePowered swaps the two BC4 blocks of every DXN texture on upload ("skin reads as hard and metallic" otherwise). Ours does not. I recall Xenia does not either, unchecked, so one is wrong and I have no evidence which. A real normal map would tell: brick mortar lines put their energy in Y.
+- **The white disk over the FMV orb.** RePowered skips one draw by hash, PS 3547764B6B934FEE, as a workaround with no cause. Ours draws it. Scene not reached.
+- **Blue and pink dots on the same walls as the orange ones.** Not identified. They may be glows, in which case the occlusion fix covers them, or the sprites rc10 made visible.
+- **The glitter around the teleport pad in the user's save.** Heavy white hexagons and rings in `emu71save` on rc10. Not compared with rc9, and it may be correct.
+- **Grass edges.** RePowered multisamples, which lets alpha-to-mask foliage cover partial pixels. The console has one sample. A cost decision.
+- **The wet lens.** RePowered replaces a vertex shader that draws window-pixel quads with the viewport off. Not checked here.
+
+**Already right in ours, by reading:** half-pixel centres (`banjo_renut_half_pixel_offset`), per-view swizzles, signed formats, stacked textures as arrays, empty fetch slots as null textures, BeginVertices draws, the gamma ramp, volume fetches of 2D textures (`banjo_renut_fetch3d_on_2d`, from RePowered).
+
 ## Enhancements audit (2026-11-02)
 
 `tools/enhancement_gap.py` and `tools/enhancement_state.py` against banjo-nx's `enhancements-reference.md`: 260 keys there, 245 defined here; of the 139 rows of "Every key", 135 ship as the reference does.
