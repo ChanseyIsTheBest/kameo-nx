@@ -29,8 +29,6 @@ extern "C" unsigned RexSwitchProcessCoreMask(void);
 extern "C" int RexSwitchSystemCoreMode(void);
 extern "C" unsigned RexSwitchAppCoreMask(void);
 extern "C" int RexSwitchEnsureForwarderNpdm(void);
-// kameo-nx (2026-11-05): what ui/switch_code_blocks.cpp did, before there was a log.
-extern "C" const char* RexCodeBlocksStatus(void);
 // libnx runtime internals used for the exit below.
 extern u32 __nx_applet_exit_mode;
 NX_NORETURN void __libnx_exit(int rc);
@@ -70,7 +68,6 @@ int main(int argc, char* argv[]) {
   auto remaining = rex::cvar::Init(argc, argv);
   rex::cvar::ApplyEnvironment();
   rex::InitLoggingEarly();
-  REXLOG_INFO("{}", RexCodeBlocksStatus());
   // banjo-nx (2026-10-27): the system core (NetherSX2_nx's 4-core mode; core/threading_switch.h), once the cvars are
   // read and before any thread of ours starts; the main thread leaves it.
   {

@@ -40,7 +40,9 @@
 #include <switch.h>
 
 extern "C" {
-extern char __start__[];
+// The executable's first instruction. Not __start__, an absolute linker symbol that is never relocated (the first build of
+// 1.0.1 used it, and the swap left the code where it was).
+extern char _start;
 extern int __system_argc;
 extern char** __system_argv;
 }
@@ -245,7 +247,7 @@ int SelfTest(Handle proc) {
 }
 
 void Apply(Handle proc) {
-  const u64 text_va = reinterpret_cast<u64>(__start__);
+  const u64 text_va = reinterpret_cast<u64>(&_start);
   MemoryInfo text = {}, ro = {}, old = {};
   u32 page_info = 0;
   const auto skip = [](const char* why, u64 value) {

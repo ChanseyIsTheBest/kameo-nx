@@ -46,6 +46,8 @@
 
 // kameo-nx (2026-11-05): defined at the end of this file.
 bool RexWindowBlocksOn();
+// kameo-nx (2026-11-05): what ui/switch_code_blocks.cpp did, before there was a log.
+extern "C" const char* RexCodeBlocksStatus(void);
 #include <rex/memory/utils.h>
 
 #include "guest_memory_switch.h"
@@ -270,6 +272,10 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
                  length);
     return kFileMappingHandleInvalid;
   }
+  REXLOG_INFO("[window blocks] guest window at 0x{:X}, {} a 2 MB boundary (banjo_window_blocks)",
+              reinterpret_cast<uintptr_t>(RexGmBase()),
+              (reinterpret_cast<uintptr_t>(RexGmBase()) & 0x1FFFFF) ? "not on" : "on");
+  REXLOG_INFO("{}", RexCodeBlocksStatus());
   return kSwitchMapping;
 }
 

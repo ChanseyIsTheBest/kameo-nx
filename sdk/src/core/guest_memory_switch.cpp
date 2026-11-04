@@ -820,7 +820,7 @@ void* RexGmShadowFor(uint64_t window_address) {
  * the prefetcher and the L2 instead. svcQueryPhysicalAddress refuses these mappings, so this is the evidence there is. An
  * emulator's numbers mean nothing here: it only shows that the test runs.
  */
-extern "C" char __start__[];
+extern "C" char _start;  /* the executable's first instruction; __start__ is never relocated */
 
 namespace {
 
@@ -967,7 +967,7 @@ extern "C" void RexGmLatencyTest(void (*emit)(const char*)) {
 
     MemoryInfo text = {}, ro = {};
     u32 page_info = 0;
-    if (R_FAILED(svcQueryMemory(&text, &page_info, reinterpret_cast<u64>(__start__)))) return;
+    if (R_FAILED(svcQueryMemory(&text, &page_info, reinterpret_cast<u64>(&_start)))) return;
     scattered.clear();
     grouped.clear();
     CodeAddresses(text.addr, text.size, false, scattered, grouped);
