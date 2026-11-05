@@ -579,7 +579,17 @@ Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_
 - **Two DLC shaders:** `ps_31E80B337E6737C3` and `ps_D8285199D6D8B325`, in a model in pack C9352F19, stopped SPIRV-Cross at "Maximum compilation loops detected" with the newer DXC's SPIR-V. Any failed shader aborts an install, so every DLC install failed. `lib/chain.js` now retries a rejected shader with `--force-recompile-max-debug-iterations 16` (8 and 64 give the same text). `--force-temporary` also gets through SPIRV-Cross, but `deko3d_glsl.py` refuses its samplers in temporaries. Both shaders now compile to 5,376 bytes, the same size as the native GLSL's, with different bytes and the same counts of texture reads, discards and branches. **Neither has been seen on screen.**
 - **Who compiles:** Banjo's later option. "The Switch, as you play" leaves out `deko3d_shaders.bin` and `pipeline_list.bin`, because with that list and no cache the prebuild workers would compile every shader in it.
 
-## 2 MB blocks: game memory and the NRO's code (version 1.0.1, 2026-11-05, from the Torchlight port's findings)
+## 2 MB blocks: game memory and the NRO's code (version 1.0.2, 2026-11-05, from the Torchlight port's findings)
+
+The test builds were numbered 1.0.1. The user chose 1.0.2 for the release, so no 1.0.1 was published.
+
+**The result on the console (user's runs, standing still in one spot at stock clocks, second test build):** 30.00 and 30.05 fps with both fixes on, 28.79 with both off: about 4.3 % faster, 1.4 ms a frame. Windows vary by about 0.3 fps. The fixes-on runs drew about 2.5 % more a frame, so a lighter scene doesn't explain it. Render thread and GPU times barely moved (20.1 and 19.9 ms; 29.4 and 29.7 ms). It's one fixes-off run in one spot, and that spot is GPU-heavy, which may hide part of the gain. The two fixes weren't measured apart.
+
+**The released NRO itself hasn't run on a console.** It differs from the console-tested build in the latency test's lines, the emulator's self-test and the version number. None of those runs on a console by default, but the ELF isn't byte-identical. It passed on the emulator.
+
+**The latency test's first version was wrong.** Its line of a page followed from the page number, so on physically contiguous memory 2048 lines fell in 64 L2 sets and it measured RAM (+112 to +153 ns) rather than the TLB. The ret test wasn't affected: -3.3 ns against the Torchlight port's +115 ns before its fix, which suggests the code really is on blocks. The corrected test hasn't run on a console, because the user judged the frame rate enough. So whether game memory is on blocks is inferred from the frame rate, not measured.
+
+**The put-back path has never run.** If the kernel refused the new copy, the swap would map the old one back. Ryujinx accepted requests its source says it refuses (a wrong old copy, and a new copy that isn't heap), then ran the wrong page and crashed at boot. Not explained. The emulator's self-test is now the normal path only, which passes.
 
 **Game memory.** `RexGmInit` passed 2 MB as the second argument of `virtmemFindAslr`, which is a guard and not an alignment. So the window was never on a 2 MB boundary, and the kernel used 4 KB pages for all of the game's memory, in every build including 1.0.0. It now asks for 2 MB more and rounds the base up. The view at `0xE0000000` maps 0x1000 further on, so it can never line up and stays on 4 KB pages. `banjo_window_blocks = false` goes back.
 
@@ -589,9 +599,5 @@ Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_
 
 **The console (user's run, 2026-11-05):** the move worked: text 46,560 KB and read-only data 7,952 KB, room for 22 and 3 blocks, and no crash in about 150 s. The window is on a 2 MB boundary.
 
-**Not known yet:**
-- **Whether large blocks are really in use.** That run had no `banjo_tlb_test_s`, so there are no latency numbers. Mapping at the right addresses doesn't prove the kernel used blocks.
-- **The gain.** At stock clocks the gameplay windows averaged 22.9 fps with both fixes and 23.2 fps in the earlier run with only game memory fixed. Those weren't controlled: not the same path through the level, and clocks changed during both. There is no 1.0.0 console run to compare with.
-- **The self-test's step 7.** On the emulator the swap's normal path passed on test pages, then a wrong old copy wasn't refused, although Ryujinx's source says it should be. Unexplained. The self-test stops there, so the path that puts the old copy back has not run. It only runs without a loader, not on a console. It should report each step in the next build.
 
 `banjo_tlb_test_s` measures the cost: the same number of cache lines in random order, one to a page and then packed into a few pages. Only the console's numbers mean anything.

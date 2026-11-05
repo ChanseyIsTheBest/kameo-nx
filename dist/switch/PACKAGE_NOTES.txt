@@ -1,6 +1,16 @@
 kameo-nx: notes for this package
 =================================
 
+Version 1.0.2: game memory and the NRO's code on 2 MB blocks.
+
+In your standing-still test at stock clocks, the second test build ran about 4.3 % faster: 30.0 fps with both fixes, 28.8 without. This package's NRO differs from that build only in the latency test, the emulator's self-test and the version. It passed on the emulator but hasn't run on your console, so boot it once and check it runs.
+
+The code move takes about 53 MB more memory. Shader files are unchanged from 1.0.0.
+
+To turn a fix off, add banjo_window_blocks = false or banjo_code_blocks = false to kameo.toml. For the latency test, add banjo_tlb_test_s = 120 and send the log: its [tlb] lines haven't run on a console since I corrected them.
+
+----
+
 Version 1.0.0: the final PGO + LTO build, the same NRO as the release page and the installer.
 
 This package holds the installer's shaders, with the DLC's: 5,722 made from the game's files, plus the 139 in the NRO. They were made by the page's own tools in Node, and the page's browser build ran the same chain. The pipeline list is from your console.
