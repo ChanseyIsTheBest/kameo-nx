@@ -579,13 +579,13 @@ Final build `app/out/switch-pgo-use/renut.nro`: `-DBANJO_PGO=use -DBANJO_SWITCH_
 - **Two DLC shaders:** `ps_31E80B337E6737C3` and `ps_D8285199D6D8B325`, in a model in pack C9352F19, stopped SPIRV-Cross at "Maximum compilation loops detected" with the newer DXC's SPIR-V. Any failed shader aborts an install, so every DLC install failed. `lib/chain.js` now retries a rejected shader with `--force-recompile-max-debug-iterations 16` (8 and 64 give the same text). `--force-temporary` also gets through SPIRV-Cross, but `deko3d_glsl.py` refuses its samplers in temporaries. Both shaders now compile to 5,376 bytes, the same size as the native GLSL's, with different bytes and the same counts of texture reads, discards and branches. **Neither has been seen on screen.**
 - **Who compiles:** Banjo's later option. "The Switch, as you play" leaves out `deko3d_shaders.bin` and `pipeline_list.bin`, because with that list and no cache the prebuild workers would compile every shader in it.
 
-## 2 MB blocks: game memory and the NRO's code (version 1.0.2, 2026-11-05, from the Torchlight port's findings)
+## 2 MB blocks: game memory and the NRO's code (version 1.0.1, 2026-11-05, from the Torchlight port's findings)
 
-The test builds were numbered 1.0.1. The user chose 1.0.2 for the release, so no 1.0.1 was published.
+Released as 1.0.1. A v1.0.2 release went up first by mistake, from a misread request. The tag `v1.0.2` also points at a commit without this work.
 
 **The result on the console (user's runs, standing still in one spot at stock clocks, second test build):** 30.00 and 30.05 fps with both fixes on, 28.79 with both off: about 4.3 % faster, 1.4 ms a frame. Windows vary by about 0.3 fps. The fixes-on runs drew about 2.5 % more a frame, so a lighter scene doesn't explain it. Render thread and GPU times barely moved (20.1 and 19.9 ms; 29.4 and 29.7 ms). It's one fixes-off run in one spot, and that spot is GPU-heavy, which may hide part of the gain. The two fixes weren't measured apart.
 
-**The released NRO itself hasn't run on a console.** It differs from the console-tested build in the latency test's lines, the emulator's self-test and the version number. None of those runs on a console by default, but the ELF isn't byte-identical. It passed on the emulator.
+**The released NRO itself hasn't run on a console.** It differs from the console-tested build in the latency test's lines, the emulator's self-test, the version number and Azkali's merged change from `std::aligned_alloc` to `::aligned_alloc`. Only the last runs by default on a console, and it calls the same function, but the ELF isn't byte-identical. It passed on the emulator.
 
 **The latency test's first version was wrong.** Its line of a page followed from the page number, so on physically contiguous memory 2048 lines fell in 64 L2 sets and it measured RAM (+112 to +153 ns) rather than the TLB. The ret test wasn't affected: -3.3 ns against the Torchlight port's +115 ns before its fix, which suggests the code really is on blocks. The corrected test hasn't run on a console, because the user judged the frame rate enough. So whether game memory is on blocks is inferred from the frame rate, not measured.
 

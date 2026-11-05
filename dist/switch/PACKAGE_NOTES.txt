@@ -1,7 +1,7 @@
 kameo-nx: notes for this package
 =================================
 
-Version 1.0.2: game memory and the NRO's code on 2 MB blocks.
+Version 1.0.1: game memory and the NRO's code on 2 MB blocks.
 
 In your standing-still test at stock clocks, the second test build ran about 4.3 % faster: 30.0 fps with both fixes, 28.8 without. This package's NRO differs from that build only in the latency test, the emulator's self-test and the version. It passed on the emulator but hasn't run on your console, so boot it once and check it runs.
 

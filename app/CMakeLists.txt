@@ -678,7 +678,7 @@ if(REXGLUE_PLATFORM_SWITCH)
     rexglue_switch_add_nro(renut
         NAME "Kameo: Elements of Power"
         AUTHOR "ChanseyIsTheBest"
-        VERSION "1.0.2"
+        VERSION "1.0.1"
         ${RENUT_ICON_ARG})
 endif()
 
