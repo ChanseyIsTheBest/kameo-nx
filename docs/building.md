@@ -82,3 +82,12 @@ run two of these builds at once: they share the SDK's archives in `sdk/out/switc
 The fixed settings are `app/kameo_switch_defaults.toml`, compiled in; the player's are `app/kameo_switch.toml`, written next
 to the NRO as `kameo.toml` when it is missing. A key added to `kameo.toml` overrides a fixed one (the test runs use that:
 `tools/run_ryujinx.ps1 -Toml <file>`).
+
+## 5. On a Linux host
+
+The same steps, with `tools/switch_shaders.sh` for `switch_shaders.ps1` and the PC build's tools built there. Build the NRO in
+devkitPro's `devkitpro/devkita64` container (libnx 4.12; libnx 4.9.0's NRO crashes at boot on firmware 21.x, docs/kameo-notes.md
+"The Switch build on Linux"), with `-DBANJO_GLSLANG_VALIDATOR=/usr/bin/glslangValidator` from the distribution's glslang and
+`REXGLUE_SWITCH_NVK_SDK` pointing at a folder whose `lib/libvulkan.a` may be an empty archive. The three shaders the game
+assembles at run time (the Bink blit) come from a console's `shader_capture/`: copy them into `out/renut_shader_dump` before the
+shader steps, or the videos are black.

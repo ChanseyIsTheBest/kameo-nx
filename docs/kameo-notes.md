@@ -601,3 +601,59 @@ The test builds were numbered 1.0.1. The user chose 1.0.2 for the release, so no
 
 
 `banjo_tlb_test_s` measures the cost: the same number of cache lines in random order, one to a page and then packed into a few pages. Only the console's numbers mean anything.
+## The PAL disc (2026-11-04)
+
+The European disc (`Kameo - Elements of Power (Europe) (En,Ja,Fr,De,Es,It,Zh,Ko) (Rev 1)`, media ID **45BB5521**): `default.xex`
+version 0.0.0.5, SHA-256 `124d812f75f465d393134a84792412bf01a135ea1d6ea4eafef82aa4a5f739c4`, the same title, base, entry
+`0x8251F320` and base image `0xBF0000` as the USA disc's. Its own title update 2 (`TU_16L61UI_000000K000000.00000000000G5`,
+the package of that media ID; `default.xexp` SHA-256 `142443cf64d31b89cc647bb33104bbfce6021d06e3c700a914a2ee65281bad65`,
+target version 0.0.0.5, source digest of the PAL base) patches it to version **0.0.2.5**, image `0xC90000`, with the same nine
+language folders. The code generator ran on that image with this tree's configuration unchanged: 207 files, 15,564 functions,
+no hint rejected, no unresolved branch.
+
+**The patched PAL image is the same build as the patched USA image (0.0.2.1).** Checked against the USA facts above and this
+tree's address-keyed lists (`tools` of this port, no USA disc at hand, so the USA image itself was not diffed):
+
+| What | In the PAL tree |
+|---|---|
+| `config/renut_funcs.toml` (14), `overrides.toml` (54), the keep list (241), setjmp `0x82704060`, longjmp `0x82703F40` | every address a function start |
+| `hot/localized_bulk.txt` (999 machine copies), `hot/hand.txt` (6 hand copies) | all function starts |
+| `kameo_d3d.cpp` (11 hooks, 4 externs), `device.cpp`, `kameo_codes.cpp` (22 externs) | all function starts |
+| D3D's build qword at `0x827AB840` | `0x0002000008574000`, XDK 2.0.2135: the device layout holds |
+| memcpy `0x8255D400` (`std r3,-8(r1)`), memmove `0x8255BDA0` (`cmpw r3,r4`), the render guard `0x8228AF0C` (`lwzx r8,r9,r26`), `vpkd3d128` at `0x82551A34` | the same words |
+| Shader containers in the executable | 53 vertex, 94 pixel, 136 distinct: all 136 among the NRO's 139 |
+| Shader containers in the levels and models | 4,477 distinct, and the installer's `deko3d_glsl.bin` and `deko3d_shaders.bin` made from them (Node, 12 threads: 4,477 shaders, 8,601 variants, 0 failed) are byte for byte the release's reference files (SHA-256 `766bb63b…`, `223051f3…`) |
+
+So one NRO serves both discs: the recompiled code is the same, the machine and hand copies check their code hash against the
+loaded image at the first call anyway (`banjo_hot_guest.cpp`), the D3D hooks sit at the same addresses, and the data comes from
+the player's own files. What changes is the installer's gate: `release/manifest.json` names both `default.xex` / `default.xexp`
+pairs (`tools/make_release.py --edition`), each pointing at the same NRO, and the page says which edition it found. The
+runtime's patch check (`xex_module.cpp`, the base's signature digest against the patch's) is per pair, so the PAL disc needs the
+PAL update and the USA disc the USA one; a mixed pair the page refuses by hash. Region: `XGetGameRegion` answers 0xFFFF for
+both, as before. **Run on the console with the PAL files (2026-11-04, firmware 21.x, emuMMC):** the release NRO (v1.0.0) patches 0.0.0.5 to 0.0.2.5 at start, mounts both folders, and plays through the logos, the opening movie and gameplay; the console's French comes up as the language. An NRO built on Linux from this tree (below) does the same.
+
+**The code generator on Linux** (how the PAL image was made, Fedora 45 in a container with clang 23): `cmake --preset
+linux-amd64` in `sdk/` with `-DGIT_EXECUTABLE=/bin/false`, because `rex_version.cmake` reads this repository's `v1.0.0` tag as
+the SDK's and stops at "floor version (0.10) is behind tag version (1.0)"; and FFmpeg's generated `config.h` (the platform
+dispatcher, with `config_masseffect_wmv3.h` included after it), `libavutil/avconfig.h` and `libavutil/ffversion.h`, which are
+git-ignored and only on the Windows machine. `src/ui` needs `x11-xcb` and `wayland-client` even for the `rexglue` target. Then
+`REXGLUE_DUMP_IMAGE=out/renut_image.bin rexglue codegen renut_manifest.toml` in `app/`, 10.7 s.
+
+**The Switch build on Linux** (the same tree, the everyday build without PGO or LTO; `tools/switch_shaders.sh` is
+`switch_shaders.ps1` for bash, and `tools/deko3d_*.py` name `uam`, `spirv-cross` and `zstd` without `.exe` there). Three
+things the Windows recipe does not meet:
+
+- **devkitA64 r28 (libnx 4.9.0) makes an NRO that dies at boot** on firmware 21.x: a memory fault in `std::uncaught_exception`
+  on the SDK's `TimerQueue` thread, the first `condition_variable_any::wait`, because `__cxa_get_globals`'s pthread key read a
+  foreign value out of the thread's TLS slot. libnx 4.10 moved the user TLS slots ("thread: change USER_TLS_BEGIN to match
+  Nintendo reserved-space"; the 21.x TLS ABI marker). devkitPro's `devkitpro/devkita64` image (r29.2, libnx 4.12.0, the
+  `switch-zlib` and `switch-zstd` portlibs the SDK's link line names even without NVK) builds a working NRO; a host devkitPro
+  that cannot be updated cannot. plume's check still wants `REXGLUE_SWITCH_NVK_SDK/lib/libvulkan.a`: an empty archive does, as
+  nothing of NVK is linked on the deko3d path.
+- **The runtime shaders.** The game files and the executable give 4,616 shaders; the NRO's table has 139, three more than the
+  executable's 136: the Bink video's blit (`vs_2180EAECD26216DB`, `ps_9F19B02671FA1600`, `ps_0A24E04301CCDBB8`), which the game
+  assembles at run time. Without them the Xbox logo, the intro and every cutscene are black and run out their time, and the
+  console writes them to `shader_capture/` next to the NRO. They go into `out/renut_shader_dump` (and `app/out/pc/shader_capture`)
+  before the PC shader table and `switch_shaders.sh`.
+- `std::aligned_alloc` is not in devkitA64's `<cstdlib>` (newlib): `switch_audio_system.cpp` calls the C one. The host
+  `glslangValidator` (`BANJO_GLSLANG_VALIDATOR`) and the deko3d PC tools must be built on the same libc the build runs on.
